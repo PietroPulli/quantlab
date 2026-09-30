@@ -1,0 +1,74 @@
+"""Performance metrics computed from a series of periodic (daily) simple returns."""
+
+import numpy as np
+import pandas as pd
+
+TRADING_DAYS = 252  # trading days per year, used to annualise daily figures
+MIN_STD = 1e-12  # below this a std is floating-point noise, not real variability
+
+
+def total_return(returns: pd.Series) -> float:
+    """Compounded return over the whole period: prod(1 + r) - 1."""
+    return float((1 + returns).prod() - 1)
+
+
+def annualized_return(returns: pd.Series, periods_per_year: int = TRADING_DAYS) -> float:
+    """Geometric average return per year (CAGR)."""
+    n = len(returns)
+    if n == 0:
+        return np.nan
+    growth = (1 + returns).prod()
+    return float(growth ** (periods_per_year / n) - 1)
+
+
+def annualized_volatility(returns: pd.Series, periods_per_year: int = TRADING_DAYS) -> float:
+    """Standard deviation of returns scaled by sqrt(periods): volatility grows like sqrt(time)."""
+    return float(returns.std(ddof=1) * np.sqrt(periods_per_year))
+
+
+def sharpe_ratio(
+    returns: pd.Series, risk_free: float = 0.0, periods_per_year: int = TRADING_DAYS
+) -> float:
+    """Annualised Sharpe ratio. `risk_free` is an annual rate, converted to per-period."""
+    rf_per_period = (1 + risk_free) ** (1 / periods_per_year) - 1
+    excess = returns - rf_per_period
+    std = excess.std(ddof=1)
+    # A constant series gives std ~1e-19 in floating point, not exactly 0: without
+    # a tolerance the ratio would explode. `not >` also catches NaN (< 2 observations).
+    if not std > MIN_STD:
+        return np.nan
+    return float(excess.mean() / std * np.sqrt(periods_per_year))
+
+
+def drawdown(returns: pd.Series) -> pd.Series:
+    """Percentage below the previous equity peak, day by day (0 = at a new high).
+
+    The starting capital (1.0) counts as the first peak, so a loss on day one
+    is already a drawdown.
+    """
+    equity = (1 + returns).cumprod()
+    peak = equity.cummax().clip(lower=1.0)
+    return equity / peak - 1
+
+
+def max_drawdown(returns: pd.Series) -> float:
+    """Worst peak-to-trough loss, as a negative number (e.g. -0.34 = -34%)."""
+    return float(drawdown(returns).min()) if len(returns) else np.nan
+
+
+def summary(returns: pd.Series, periods_per_year: int = TRADING_DAYS) -> pd.Series:
+    """The standard metrics in one Series, ready to be put side by side in a table."""
+    return pd.Series(
+        {
+            "total_return": total_return(returns),
+            "annual_return": annualized_return(returns, periods_per_year),
+            "annual_volatility": annualized_volatility(returns, periods_per_year),
+            "sharpe": sharpe_ratio(returns, periods_per_year=periods_per_year),
+            "max_drawdown": max_drawdown(returns),
+        }
+    )
+
+
+def compare(results: dict[str, pd.Series], periods_per_year: int = TRADING_DAYS) -> pd.DataFrame:
+    """Metrics table with one column per strategy, e.g. {"strategy": r1, "buy_and_hold": r2}."""
+    return pd.DataFrame({name: summary(r, periods_per_year) for name, r in results.items()})
