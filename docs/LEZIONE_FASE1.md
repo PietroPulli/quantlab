@@ -51,7 +51,7 @@ Dividiamo, poi `np.log` applica il logaritmo naturale a ogni elemento.
 
 ### `data.py`
 
-Costanti: `MAX_DAILY_JUMP = 0.5` (50%) e `MAX_DATE_GAP_DAYS = 7` sono le soglie di sospetto.
+Costanti: `MAX_DAILY_JUMP = 0.25` (25%, abbastanza bassa da catturare anche uno split 3:2, che vale −33%) e `MAX_DATE_GAP_DAYS = 7` sono le soglie di sospetto.
 Sono scelte mie: si possono cambiare.
 
 **`download_prices`**
@@ -76,7 +76,7 @@ Sono scelte mie: si possono cambiare.
 vuota = tutto ok).
 1. `df.index.has_duplicates`: date duplicate.
 2. Per ogni colonna: `isna().sum()` conta i NaN; `(series <= 0).sum()` conta i prezzi non validi.
-3. Salti: prendiamo solo i prezzi positivi, `pct_change().abs()` e contiamo quelli oltre il 50%.
+3. Salti: prendiamo solo i prezzi positivi, `pct_change().abs()` e contiamo quelli oltre il 25%.
 4. Buchi nelle date: `index.diff().dt.days` è la distanza in giorni tra righe consecutive;
    oltre 7 giorni di calendario è un buco (un weekend lungo o una festa non lo fanno scattare).
 

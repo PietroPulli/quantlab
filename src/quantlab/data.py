@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-MAX_DAILY_JUMP = 0.5  # daily moves larger than 50% are flagged as suspicious
+MAX_DAILY_JUMP = 0.25  # daily moves larger than 25% are flagged (catches 2:1 and 3:2 splits)
 MAX_DATE_GAP_DAYS = 7  # calendar days between consecutive rows before flagging a gap
 
 

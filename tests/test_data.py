@@ -41,6 +41,18 @@ def test_suspicious_jump_is_flagged():
     assert any("jump" in p for p in validate_prices(df))
 
 
+def test_three_for_two_split_is_flagged():
+    df = _clean()
+    df.iloc[5:, 0] = df.iloc[5:, 0] * 2 / 3  # unadjusted 3-for-2 split look (-33%)
+    assert any("jump" in p for p in validate_prices(df))
+
+
+def test_normal_daily_move_is_not_flagged():
+    df = _clean()
+    df.iloc[5:, 0] = df.iloc[5:, 0] * 0.9  # a -10% day is a real move, not a data error
+    assert validate_prices(df) == []
+
+
 def test_duplicate_dates_are_flagged():
     df = _clean()
     df = pd.concat([df, df.iloc[[2]]])
