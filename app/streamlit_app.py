@@ -291,12 +291,33 @@ def pretty(table: pd.DataFrame) -> pd.DataFrame:
     return shown
 
 
+COLORS = {"strategy": "#3b82f6", "buy_and_hold": "#f08a24"}  # same colours as notebook 02
+
+
+def comparison_chart(table: pd.DataFrame, y_title: str, y_format: str) -> alt.Chart:
+    """Strategy vs buy & hold as two lines with fixed, distinct colours."""
+    long = table.rename_axis("date").reset_index().melt("date", var_name="series", value_name="value")
+    long["series"] = long["series"].map(labels)
+    return (
+        alt.Chart(long)
+        .mark_line(strokeWidth=1.8)
+        .encode(
+            x=alt.X("date:T", title=None),
+            y=alt.Y("value:Q", title=y_title, axis=alt.Axis(format=y_format), scale=alt.Scale(zero=False)),
+            color=alt.Color("series:N", title=None, legend=alt.Legend(orient="top"),
+                            scale=alt.Scale(domain=[labels[k] for k in COLORS], range=list(COLORS.values()))),
+            tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("series:N", title="Serie"),
+                     alt.Tooltip("value:Q", title=y_title, format=y_format)],
+        )
+    )
+
+
 left, right = st.columns([3, 2])
 with left:
     st.subheader("Quanto diventa 1 € (periodo di prova, costi inclusi)")
-    st.line_chart((1 + oos_returns).cumprod().rename(columns=labels))
+    st.altair_chart(comparison_chart((1 + oos_returns).cumprod(), "Valore di 1 €", ".2f"), width="stretch")
     st.subheader("Perdita dal massimo precedente")
-    st.area_chart(oos_returns.apply(drawdown).rename(columns=labels))
+    st.altair_chart(comparison_chart(oos_returns.apply(drawdown), "Perdita", ".0%"), width="stretch")
 with right:
     st.subheader("Periodo di prova")
     st.table(pretty(oos))
@@ -331,7 +352,7 @@ price_line = (
 )
 trade_points = (
     alt.Chart(trades.rename_axis("date").reset_index())
-    .mark_point(filled=True, size=70)
+    .mark_point(filled=True, size=160, opacity=1)
     .encode(
         x="date:T",
         y="price:Q",
