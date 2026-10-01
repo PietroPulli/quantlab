@@ -7,6 +7,7 @@ import pytest
 from quantlab.metrics import (
     annualized_return,
     annualized_volatility,
+    calmar_ratio,
     compare,
     drawdown,
     max_drawdown,
@@ -75,3 +76,16 @@ def test_summary_and_compare_shapes():
     assert table.loc["annual_volatility", "buy_and_hold"] == pytest.approx(
         table.loc["annual_volatility", "strategy"] / 2
     )
+
+
+def test_calmar_known_value():
+    # Day 1 loses 20% (the worst drawdown), then the equity climbs steadily to 1.10
+    # after exactly one year: annual return 10%, max drawdown -20% -> Calmar 0.5.
+    daily = (1.10 / 0.80) ** (1 / 251) - 1
+    r = pd.Series([-0.20] + [daily] * 251)
+    assert calmar_ratio(r) == pytest.approx(0.5)
+
+
+def test_calmar_is_nan_without_drawdown():
+    assert np.isnan(calmar_ratio(pd.Series([0.001] * 10)))
+    assert np.isnan(calmar_ratio(pd.Series([], dtype=float)))

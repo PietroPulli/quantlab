@@ -56,9 +56,30 @@ def mean_reversion(
     return signal.ffill().fillna(0.0)
 
 
+def breakout(prices: pd.Series, window: int = 50) -> pd.Series:
+    """Go long on a new `window`-day high, go to cash on a new `window`-day low.
+
+    In between keep the last decision, with the same forward-fill trick as mean_reversion.
+    """
+    if window < 2:
+        raise ValueError("need window >= 2")
+    high = prices.rolling(window).max()  # highest price of the last `window` days, t included
+    low = prices.rolling(window).min()
+
+    is_high = prices >= high  # today is the highest of the window
+    is_low = prices <= low  # today is the lowest of the window
+    # In a flat window today is both the high and the low: that is not a decision,
+    # so we keep the previous position instead of letting "exit" win by default.
+    signal = pd.Series(float("nan"), index=prices.index)
+    signal[is_high & ~is_low] = 1.0
+    signal[is_low & ~is_high] = 0.0
+    return signal.ffill().fillna(0.0)
+
+
 STRATEGIES = {
     "buy_and_hold": buy_and_hold,
     "momentum": momentum,
     "moving_average_crossover": moving_average_crossover,
     "mean_reversion": mean_reversion,
+    "breakout": breakout,
 }

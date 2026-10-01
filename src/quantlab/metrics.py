@@ -56,6 +56,18 @@ def max_drawdown(returns: pd.Series) -> float:
     return float(drawdown(returns).min()) if len(returns) else np.nan
 
 
+def calmar_ratio(returns: pd.Series, periods_per_year: int = TRADING_DAYS) -> float:
+    """Annual return divided by the size of the worst drawdown (return per unit of pain).
+
+    Undefined (NaN) when there was no drawdown at all: dividing by zero would give
+    infinity, which would look like a perfect strategy instead of "not measurable".
+    """
+    mdd = max_drawdown(returns)
+    if not mdd < 0:  # also catches NaN (empty series)
+        return np.nan
+    return float(annualized_return(returns, periods_per_year) / abs(mdd))
+
+
 def summary(returns: pd.Series, periods_per_year: int = TRADING_DAYS) -> pd.Series:
     """The standard metrics in one Series, ready to be put side by side in a table."""
     return pd.Series(

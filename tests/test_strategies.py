@@ -7,6 +7,7 @@ import pytest
 
 from quantlab.strategies import (
     STRATEGIES,
+    breakout,
     buy_and_hold,
     mean_reversion,
     momentum,
@@ -18,6 +19,7 @@ SMALL_PARAMS = {
     "momentum": {"lookback": 20, "skip": 5},
     "moving_average_crossover": {"fast": 5, "slow": 20},
     "mean_reversion": {"window": 10},
+    "breakout": {"window": 10},
 }
 
 
@@ -80,12 +82,25 @@ def test_mean_reversion_buys_the_dip_and_sells_the_recovery():
     assert signals.iloc[-1] == 0.0  # price back above its mean -> sold
 
 
+def test_breakout_enters_on_new_high_and_exits_on_new_low():
+    idx = pd.bdate_range("2020-01-01", periods=30)
+    # flat at 100, a jump to a new high, flat again, then a crash to a new low
+    values = [100.0] * 10 + [110.0] * 10 + [90.0] * 10
+    signals = breakout(pd.Series(values, index=idx), window=5)
+    assert (signals.iloc[:4] == 0).all()  # warm-up: window not full yet
+    assert signals.iloc[10] == 1.0  # 110 is the 5-day high -> long
+    assert signals.iloc[15] == 1.0  # still the high (window all 110) -> stays long
+    assert signals.iloc[20] == 0.0  # 90 is the 5-day low -> cash
+    assert signals.iloc[-1] == 0.0
+
+
 @pytest.mark.parametrize(
     "call",
     [
         lambda p: momentum(p, lookback=10, skip=10),
         lambda p: moving_average_crossover(p, fast=20, slow=5),
         lambda p: mean_reversion(p, entry_z=0.5, exit_z=0.0),
+        lambda p: breakout(p, window=1),
     ],
 )
 def test_invalid_parameters_are_rejected(call):
