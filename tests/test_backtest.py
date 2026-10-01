@@ -135,3 +135,35 @@ def test_trade_log_is_empty_without_trades():
     idx = pd.bdate_range("2020-01-01", periods=4)
     prices = pd.Series([10.0, 11, 12, 13], index=idx)
     assert trade_log(prices, pd.Series(0.0, index=idx)).empty
+
+
+def test_idle_cash_earns_the_cash_rate():
+    idx = pd.bdate_range("2020-01-01", periods=253)
+    prices = pd.Series(100.0, index=idx)  # flat market: only cash can earn anything
+    flat = run_backtest(prices, pd.Series(0.0, index=idx), cash_rate=0.04)
+    assert flat["equity"].iloc[-1] == pytest.approx(1.04)  # 252 daily returns = one year at 4%
+
+
+def test_invested_capital_earns_no_cash_interest():
+    idx = pd.bdate_range("2020-01-01", periods=10)
+    prices = pd.Series(100.0, index=idx)
+    half = run_backtest(prices, pd.Series(0.5, index=idx), commission=0, slippage=0, cash_rate=0.04)
+    daily = 1.04 ** (1 / 252) - 1
+    assert half["cash_return"].iloc[0] == 0.0  # day 0: starting point, no interest yet
+    assert np.allclose(half["cash_return"].iloc[1:], 0.5 * daily)  # half invested from day 1
+
+
+def test_cash_rate_zero_changes_nothing():
+    prices = _zigzag()
+    signals = (prices.pct_change() > 0).astype(float)
+    pdt.assert_frame_equal(
+        run_backtest(prices, signals).drop(columns="cash_return"),
+        run_backtest(prices, signals, cash_rate=0.0).drop(columns="cash_return"),
+    )
+    assert (run_backtest(prices, signals)["cash_return"] == 0).all()
+
+
+def test_cash_rate_in_percent_is_rejected():
+    prices = _zigzag()
+    with pytest.raises(ValueError):
+        run_backtest(prices, pd.Series(0.0, index=prices.index), cash_rate=4.0)  # 400%: a typo for 0.04
