@@ -190,6 +190,12 @@ with st.sidebar:
     st.header("3. Costi per operazione")
     commission = st.number_input("Commissione (%)", 0.0, 1.0, 0.10, 0.01) / 100
     slippage = st.number_input("Slippage (%)", 0.0, 1.0, 0.05, 0.01) / 100
+    cash_rate = st.number_input(
+        "Interesse sui contanti (% annuo)", 0.0, 10.0, 2.0, 0.25, key="cash_rate",
+        help="Quando la strategia è fuori dal mercato, i soldi rendono questo tasso (come BOT o conto deposito). "
+        "2% ≈ media dei T-bill USA 2015-2025: quasi 0 fino al 2021, 4-5% dal 2023. "
+        "Lo stesso tasso viene sottratto nello Sharpe, così stare in contanti non sembra bravura.",
+    ) / 100
 
     run = st.button("Metti alla prova", type="primary", width="stretch")
 
@@ -226,6 +232,7 @@ try:
             name=f"{name} su {ticker}",
             commission=commission,
             slippage=slippage,
+            cash_rate=cash_rate,
         )
 except ValueError as exc:  # e.g. fast average longer than the slow one
     st.error(f"Parametri non validi: {exc}")
@@ -334,7 +341,7 @@ with right:
         st.table(pretty(report.walk_forward))
 
 # ---- When does it trade? ----
-positions = run_backtest(prices, strategy_func(prices, **report.params), commission, slippage)["position"]
+positions = run_backtest(prices, strategy_func(prices, **report.params), commission, slippage, cash_rate)["position"]
 trades = trade_log(prices, positions)
 trades = trades[trades.index >= report.split]
 oos_prices = prices[prices.index >= report.split]

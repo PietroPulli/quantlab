@@ -99,3 +99,13 @@ def test_app_warns_after_several_attempts_on_the_same_ticker(fake_prices):
     assert any("hai provato 2 strategie diverse" in w.value for w in at.warning)
     at.sidebar.toggle[0].set_value(True).run()  # grid of 4 combinations
     assert any("3 strategie diverse (6 combinazioni" in w.value for w in at.warning)
+
+
+def test_app_cash_rate_changes_the_result(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.number_input(key="cash_rate").set_value(0.0).run()
+    at.sidebar.button[0].click().run()
+    zero = at.table[0].value.loc["Guadagno totale"].iloc[0]
+    at.number_input(key="cash_rate").set_value(5.0).run()
+    assert not at.exception
+    assert at.table[0].value.loc["Guadagno totale"].iloc[0] != zero
