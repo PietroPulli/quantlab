@@ -78,3 +78,13 @@ def test_app_custom_rule_against_a_number(fake_prices):
     at.sidebar.button[0].click().run()
     assert not at.exception
     assert any("Rendimento 20g > 0" in m.value for m in at.markdown)
+
+
+def test_app_custom_rule_with_two_conditions(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.radio(key="mode").set_value("Crea la tua regola").run()
+    at.toggle(key="entry_and").set_value(True).run()
+    at.sidebar.button[0].click().run()
+    assert not at.exception
+    assert any("Prezzo > Media mobile 100g E z-score (distanza dalla media) 10g < -1" in m.value
+               for m in at.markdown)

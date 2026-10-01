@@ -52,18 +52,33 @@ class Condition:
         return OPERATORS[self.op](left, right)  # any comparison with NaN is False: warm-up -> no signal
 
 
-def rule_strategy(prices: pd.Series, entry: Condition, exit: Condition | None = None) -> pd.Series:
+Rule = Condition | list[Condition]  # a list means ALL its conditions must hold (AND)
+
+
+def holds(prices: pd.Series, rule: Rule) -> pd.Series:
+    """True on the days the rule holds; for a list, on the days every condition holds."""
+    conditions = [rule] if isinstance(rule, Condition) else rule
+    if not conditions:
+        raise ValueError("a rule needs at least one condition")
+    result = conditions[0].evaluate(prices)
+    for condition in conditions[1:]:
+        result = result & condition.evaluate(prices)
+    return result
+
+
+def rule_strategy(prices: pd.Series, entry: Rule, exit: Rule | None = None) -> pd.Series:
     """Daily signals (1 = long, 0 = cash) from an entry rule and an optional exit rule.
 
-    Without an exit rule we are long exactly while the entry condition holds.
+    Each rule is one Condition or a list of Conditions that must all hold.
+    Without an exit rule we are long exactly while the entry rule holds.
     With one, we enter when `entry` becomes true and stay long until `exit` is true
     (same forward-fill trick as mean_reversion). A day where both are true is not a
     decision, so the previous position is kept.
     """
-    go_long = entry.evaluate(prices)
+    go_long = holds(prices, entry)
     if exit is None:
         return go_long.astype(float)
-    go_flat = exit.evaluate(prices)
+    go_flat = holds(prices, exit)
     signal = pd.Series(float("nan"), index=prices.index)
     signal[go_long & ~go_flat] = 1.0
     signal[go_flat & ~go_long] = 0.0

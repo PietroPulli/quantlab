@@ -5,7 +5,7 @@ import pandas as pd
 import pandas.testing as pdt
 import pytest
 
-from quantlab.rules import Condition, Indicator, rule_strategy
+from quantlab.rules import Condition, Indicator, holds, rule_strategy
 from quantlab.strategies import breakout, moving_average_crossover
 
 PRICE = Indicator("price")
@@ -24,6 +24,10 @@ RULES = {
         Condition(Indicator("zscore", 10), ">", 0.0),
     ),
     "positive_return": (Condition(Indicator("return", 20), ">", 0.0), None),
+    "dip_in_uptrend": (
+        [Condition(PRICE, ">", Indicator("sma", 50)), Condition(Indicator("zscore", 10), "<", -1.0)],
+        Condition(Indicator("zscore", 10), ">", 0.0),
+    ),
 }
 
 
@@ -81,3 +85,21 @@ def test_warm_up_days_are_flat():
 def test_invalid_rules_are_rejected(condition):
     with pytest.raises(ValueError):
         rule_strategy(_random_walk(50), condition)
+
+
+def test_a_list_of_conditions_means_all_of_them():
+    idx = pd.bdate_range("2020-01-01", periods=5)
+    prices = pd.Series([90.0, 95, 100, 105, 110], index=idx)
+    rule = [Condition(PRICE, ">", 92.0), Condition(PRICE, "<", 108.0)]
+    assert holds(prices, rule).tolist() == [False, True, True, True, False]
+
+
+def test_single_condition_and_list_of_one_are_the_same():
+    prices = _random_walk()
+    c = Condition(PRICE, ">", Indicator("sma", 20))
+    pdt.assert_series_equal(rule_strategy(prices, c), rule_strategy(prices, [c]))
+
+
+def test_empty_rule_is_rejected():
+    with pytest.raises(ValueError):
+        rule_strategy(_random_walk(50), [])

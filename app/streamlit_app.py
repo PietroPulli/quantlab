@@ -80,8 +80,12 @@ def describe_indicator(ind: Indicator | float) -> str:
     return label if ind.name == "price" else f"{label} {ind.window}g"
 
 
-def describe(condition: Condition) -> str:
-    return f"{describe_indicator(condition.left)} {condition.op} {describe_indicator(condition.right)}"
+def describe(rule: Condition | list[Condition]) -> str:
+    """'Prezzo > Media mobile 200g', or several conditions joined by 'E'."""
+    conditions = [rule] if isinstance(rule, Condition) else rule
+    return " E ".join(
+        f"{describe_indicator(c.left)} {c.op} {describe_indicator(c.right)}" for c in conditions
+    )
 
 
 def indicator_input(label: str, key: str, default: Indicator) -> Indicator:
@@ -91,22 +95,30 @@ def indicator_input(label: str, key: str, default: Indicator) -> Indicator:
                         format_func=INDICATOR_LABELS.get, key=f"{key}-name")
     if name == "price":
         return Indicator("price")
-    window = st.number_input("N giorni", 2, 504, max(default.window, 20), key=f"{key}-window")
+    start_window = default.window if default.window >= 2 else 20  # "price" has no window
+    window = st.number_input("N giorni", 2, 504, start_window, key=f"{key}-window")
     return Indicator(name, int(window))
 
 
-def condition_input(key: str, left: Indicator, op: str, right: Indicator) -> Condition:
-    """Widgets for one rule: <indicator> <operator> <indicator or number>."""
+def condition_input(key: str, left: Indicator, op: str, right: Indicator | float) -> Condition:
+    """Widgets for one condition: <indicator> <operator> <indicator or number>.
+
+    `left`, `op` and `right` are only the starting values shown to the user.
+    """
+    right_is_number = not isinstance(right, Indicator)
     left_ind = indicator_input("Se", f"{key}-left", left)
     op = st.selectbox("è", list(OPERATOR_LABELS), index=list(OPERATOR_LABELS).index(op),
                       format_func=OPERATOR_LABELS.get, key=f"{key}-op")
-    if st.radio("di", ["un indicatore", "un numero"], horizontal=True, key=f"{key}-kind") == "un numero":
+    kinds = ["un indicatore", "un numero"]
+    kind = st.radio("di", kinds, index=int(right_is_number), horizontal=True, key=f"{key}-kind")
+    if kind == "un numero":
         right_value: Indicator | float = st.number_input(
-            "Numero", value=0.0, step=0.01, format="%.2f", key=f"{key}-number",
+            "Numero", value=float(right) if right_is_number else 0.0, step=0.01, format="%.2f", key=f"{key}-number",
             help="Rendimenti in decimali (0.05 = +5%). z-score in deviazioni standard (-1 = 1 sotto la media).",
         )
     else:
-        right_value = indicator_input("Indicatore", f"{key}-right", right)
+        default = Indicator("sma", 50) if right_is_number else right
+        right_value = indicator_input("Indicatore", f"{key}-right", default)
     return Condition(left_ind, op, right_value)
 
 
@@ -157,6 +169,10 @@ with st.sidebar:
         st.header("2. La tua regola")
         st.markdown("**Compra quando...**")
         entry = condition_input("entry", Indicator("price"), ">", Indicator("sma", 100))
+        if st.toggle("Aggiungi una condizione (E)", key="entry_and",
+                     help="Compra solo nei giorni in cui sono vere entrambe le condizioni."):
+            st.markdown("**...e anche quando...**")
+            entry = [entry, condition_input("entry2", Indicator("zscore", 10), "<", -1.0)]
         st.caption(f"Entrata: {describe(entry)}")
         exit_rule = None
         if st.toggle("Aggiungi una regola di uscita", key="has_exit",
@@ -271,7 +287,11 @@ with right:
     st.subheader("Periodo di prova")
     st.table(pretty(oos))
     st.subheader("Periodo di scelta (in-sample)")
-    st.caption("Qui la strategia è avvantaggiata: i parametri sono stati scelti guardando questi dati.")
+    if grid:
+        st.caption("Qui la strategia è avvantaggiata: i parametri sono stati scelti guardando questi dati.")
+    else:
+        st.caption("Parametri fissi: nessuna ottimizzazione automatica. Ma se li hai scelti tu "
+                   "dopo aver guardato i grafici, li hai scelti sul passato anche tu.")
     st.table(pretty(report.in_sample))
     if report.walk_forward is not None:
         st.subheader("Walk-forward")
