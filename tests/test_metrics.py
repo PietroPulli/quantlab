@@ -89,3 +89,9 @@ def test_calmar_known_value():
 def test_calmar_is_nan_without_drawdown():
     assert np.isnan(calmar_ratio(pd.Series([0.001] * 10)))
     assert np.isnan(calmar_ratio(pd.Series([], dtype=float)))
+
+
+def test_compare_passes_the_risk_free_rate_to_sharpe():
+    r = pd.Series([0.02, 0.0] * 50)
+    table = compare({"a": r}, risk_free=0.05)
+    assert table.loc["sharpe", "a"] == pytest.approx(sharpe_ratio(r, risk_free=0.05))

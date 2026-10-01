@@ -76,3 +76,32 @@ def test_format_report_contains_the_key_sections():
     text = format_report(evaluate_strategy(_random_walk(1100), momentum, grid=grid, n_bootstrap=50))
     for section in ("VERDICT", "IN-SAMPLE", "OUT-OF-SAMPLE", "WALK-FORWARD", "survivorship"):
         assert section in text
+
+
+def _always_cash(prices: pd.Series) -> pd.Series:
+    return pd.Series(0.0, index=prices.index)
+
+
+def test_sitting_in_cash_does_not_look_skilful():
+    # Cash earning 4% has a steady return and almost no volatility: if the Sharpe did
+    # not subtract the cash rate, it would look like a fantastic strategy.
+    report = evaluate_strategy(_random_walk(), _always_cash, cash_rate=0.04, n_bootstrap=50)
+    oos_sharpe = report.out_of_sample.loc["sharpe", "strategy"]
+    assert np.isnan(oos_sharpe) or abs(oos_sharpe) < 1e-6
+    assert report.out_of_sample.loc["annual_return", "strategy"] == pytest.approx(0.04)
+
+
+def test_cash_rate_helps_strategies_that_are_often_out_of_the_market():
+    prices = _random_walk(drift=0.0003)
+    params = {"lookback": 60, "skip": 5}
+    without = evaluate_strategy(prices, momentum, params=params, n_bootstrap=50)
+    with_cash = evaluate_strategy(prices, momentum, params=params, cash_rate=0.04, n_bootstrap=50)
+    gain = lambda r: r.out_of_sample.loc["total_return", "strategy"]  # noqa: E731
+    bh = lambda r: r.out_of_sample.loc["total_return", "buy_and_hold"]  # noqa: E731
+    assert gain(with_cash) > gain(without)
+    assert bh(with_cash) == pytest.approx(bh(without))  # always invested: no idle cash
+
+
+def test_report_mentions_the_cash_rate():
+    report = evaluate_strategy(_random_walk(), buy_and_hold, cash_rate=0.03, n_bootstrap=50)
+    assert "idle cash earns 3.00%" in format_report(report)

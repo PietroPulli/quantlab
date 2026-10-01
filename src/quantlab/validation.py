@@ -41,10 +41,11 @@ def strategy_returns(
     params: dict,
     commission: float = DEFAULT_COMMISSION,
     slippage: float = DEFAULT_SLIPPAGE,
+    cash_rate: float = 0.0,
 ) -> pd.Series:
-    """Net daily returns of `strategy(prices, **params)` after costs."""
+    """Net daily returns of `strategy(prices, **params)` after costs (idle cash earns `cash_rate`)."""
     signals = strategy(prices, **params)
-    return run_backtest(prices, signals, commission, slippage)["net_return"]
+    return run_backtest(prices, signals, commission, slippage, cash_rate)["net_return"]
 
 
 def optimize(
@@ -55,6 +56,7 @@ def optimize(
     end: pd.Timestamp | None = None,
     commission: float = DEFAULT_COMMISSION,
     slippage: float = DEFAULT_SLIPPAGE,
+    cash_rate: float = 0.0,
 ) -> tuple[dict, pd.DataFrame]:
     """Pick the params with the best Sharpe on the dates [start, end) only.
 
@@ -64,9 +66,9 @@ def optimize(
     history = prices[prices.index < end] if end is not None else prices
     rows = []
     for params in grid:
-        net = strategy_returns(history, strategy, params, commission, slippage)
+        net = strategy_returns(history, strategy, params, commission, slippage, cash_rate)
         window = net[net.index >= start] if start is not None else net
-        rows.append({**params, "sharpe": sharpe_ratio(window)})
+        rows.append({**params, "sharpe": sharpe_ratio(window, risk_free=cash_rate)})
     scores = pd.DataFrame(rows)
     # NaN Sharpe (strategy never traded) must never win: rank it below everything.
     best = int(scores["sharpe"].fillna(-np.inf).to_numpy().argmax())
@@ -81,6 +83,7 @@ def walk_forward(
     test_days: int = 252,
     commission: float = DEFAULT_COMMISSION,
     slippage: float = DEFAULT_SLIPPAGE,
+    cash_rate: float = 0.0,
 ) -> tuple[pd.Series, pd.DataFrame]:
     """Re-optimise on a rolling training window, then trade the next unseen window.
 
@@ -105,6 +108,7 @@ def walk_forward(
             end=prices.index[test_start],
             commission=commission,
             slippage=slippage,
+            cash_rate=cash_rate,
         )
         # Signals for the test window, computed only from prices up to test_end.
         window_signals = strategy(prices.iloc[:test_end], **best).iloc[test_start:test_end]
@@ -118,7 +122,7 @@ def walk_forward(
             }
         )
 
-    net = run_backtest(prices, signals, commission, slippage)["net_return"]
+    net = run_backtest(prices, signals, commission, slippage, cash_rate)["net_return"]
     return net.iloc[train_days:], pd.DataFrame(folds)
 
 
@@ -153,12 +157,13 @@ def sharpe_difference_bootstrap(
     n_samples: int = 1000,
     block_size: int = 20,
     seed: int = 42,
+    risk_free: float = 0.0,
 ) -> np.ndarray:
     """Bootstrap samples of Sharpe(strategy) - Sharpe(benchmark), resampling days in pairs."""
     paired = pd.DataFrame({"strategy": strategy_net, "benchmark": benchmark_net})
     return block_bootstrap(
         paired,
-        lambda d: sharpe_ratio(d["strategy"]) - sharpe_ratio(d["benchmark"]),
+        lambda d: sharpe_ratio(d["strategy"], risk_free) - sharpe_ratio(d["benchmark"], risk_free),
         n_samples,
         block_size,
         seed,
@@ -167,6 +172,8 @@ def sharpe_difference_bootstrap(
 
 def confidence_interval(samples: np.ndarray, level: float = 0.95) -> tuple[float, float]:
     """Central interval containing `level` of the bootstrap samples (NaNs ignored)."""
+    if np.isnan(samples).all():  # e.g. a strategy that never invests has no Sharpe at all
+        return np.nan, np.nan
     tail = (1 - level) / 2 * 100
     low, high = np.nanpercentile(samples, [tail, 100 - tail])
     return float(low), float(high)

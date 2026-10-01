@@ -37,14 +37,17 @@ class StrategyReport:
     share_beating: float  # fraction of bootstrap samples where the strategy wins
     walk_forward: pd.DataFrame | None = None  # metrics table, None if no grid given
     walk_forward_folds: pd.DataFrame | None = None
+    cash_rate: float = 0.0  # annual interest on idle cash, also subtracted in every Sharpe
     verdict: str = ""
     warnings: list[str] = field(default_factory=list)
 
 
-def _buy_and_hold_from(prices: pd.Series, start: pd.Timestamp, commission: float, slippage: float) -> pd.Series:
+def _buy_and_hold_from(
+    prices: pd.Series, start: pd.Timestamp, commission: float, slippage: float, cash_rate: float
+) -> pd.Series:
     """Buy & hold that only starts investing on `start`, so it pays the same entry cost."""
     signals = (prices.index >= start).astype(float)
-    net = run_backtest(prices, pd.Series(signals, index=prices.index), commission, slippage)
+    net = run_backtest(prices, pd.Series(signals, index=prices.index), commission, slippage, cash_rate)
     return net["net_return"][prices.index >= start]
 
 
@@ -69,6 +72,7 @@ def evaluate_strategy(
     in_sample_fraction: float = 0.7,
     commission: float = DEFAULT_COMMISSION,
     slippage: float = DEFAULT_SLIPPAGE,
+    cash_rate: float = 0.0,
     n_bootstrap: int = 1000,
     block_size: int = 20,
     seed: int = 42,
@@ -84,23 +88,25 @@ def evaluate_strategy(
         raise ValueError("give either params or grid, not both")
     split = split_date(prices.index, in_sample_fraction)
     if grid is not None:
-        params, _ = optimize(prices, strategy, grid, end=split, commission=commission, slippage=slippage)
+        params, _ = optimize(
+            prices, strategy, grid, end=split, commission=commission, slippage=slippage, cash_rate=cash_rate
+        )
     params = params or {}
     n_combinations = len(grid) if grid is not None else 1
 
     returns = pd.DataFrame(
         {
-            "strategy": strategy_returns(prices, strategy, params, commission, slippage),
-            "buy_and_hold": strategy_returns(prices, buy_and_hold, {}, commission, slippage),
+            "strategy": strategy_returns(prices, strategy, params, commission, slippage, cash_rate),
+            "buy_and_hold": strategy_returns(prices, buy_and_hold, {}, commission, slippage, cash_rate),
         }
     )
     is_mask = returns.index < split
-    in_sample = compare(dict(returns[is_mask].items()))
-    out_of_sample = compare(dict(returns[~is_mask].items()))
+    in_sample = compare(dict(returns[is_mask].items()), risk_free=cash_rate)
+    out_of_sample = compare(dict(returns[~is_mask].items()), risk_free=cash_rate)
 
     oos = returns[~is_mask]
     samples = sharpe_difference_bootstrap(
-        oos["strategy"], oos["buy_and_hold"], n_bootstrap, block_size, seed
+        oos["strategy"], oos["buy_and_hold"], n_bootstrap, block_size, seed, cash_rate
     )
     ci = confidence_interval(samples)
     sharpe_diff = out_of_sample.loc["sharpe", "strategy"] - out_of_sample.loc["sharpe", "buy_and_hold"]
@@ -108,10 +114,10 @@ def evaluate_strategy(
     wf_table, wf_folds = None, None
     if grid is not None and len(prices) >= walk_forward_train + walk_forward_test:
         wf_net, wf_folds = walk_forward(
-            prices, strategy, grid, walk_forward_train, walk_forward_test, commission, slippage
+            prices, strategy, grid, walk_forward_train, walk_forward_test, commission, slippage, cash_rate
         )
-        bh_net = _buy_and_hold_from(prices, wf_net.index[0], commission, slippage)
-        wf_table = compare({"strategy": wf_net, "buy_and_hold": bh_net})
+        bh_net = _buy_and_hold_from(prices, wf_net.index[0], commission, slippage, cash_rate)
+        wf_table = compare({"strategy": wf_net, "buy_and_hold": bh_net}, risk_free=cash_rate)
 
     warnings = []
     is_sharpe = in_sample.loc["sharpe", "strategy"]
@@ -136,6 +142,7 @@ def evaluate_strategy(
         split=split,
         commission=commission,
         slippage=slippage,
+        cash_rate=cash_rate,
         returns=returns,
         in_sample=in_sample,
         out_of_sample=out_of_sample,
@@ -165,7 +172,8 @@ def format_report(report: StrategyReport) -> str:
     lines = [
         f"STRATEGY REPORT: {report.name} {report.params}",
         f"Period {start} -> {end}, out-of-sample from {report.split.date()}",
-        f"Costs per trade: commission {report.commission:.2%}, slippage {report.slippage:.2%}",
+        f"Costs per trade: commission {report.commission:.2%}, slippage {report.slippage:.2%}; "
+        f"idle cash earns {report.cash_rate:.2%} a year (subtracted in Sharpe)",
         "",
         "VERDICT: " + report.verdict,
         f"  Out-of-sample Sharpe difference {report.sharpe_diff:+.2f} "

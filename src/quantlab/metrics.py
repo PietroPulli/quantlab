@@ -68,19 +68,29 @@ def calmar_ratio(returns: pd.Series, periods_per_year: int = TRADING_DAYS) -> fl
     return float(annualized_return(returns, periods_per_year) / abs(mdd))
 
 
-def summary(returns: pd.Series, periods_per_year: int = TRADING_DAYS) -> pd.Series:
-    """The standard metrics in one Series, ready to be put side by side in a table."""
+def summary(
+    returns: pd.Series, periods_per_year: int = TRADING_DAYS, risk_free: float = 0.0
+) -> pd.Series:
+    """The standard metrics in one Series, ready to be put side by side in a table.
+
+    `risk_free` (annual) is subtracted in the Sharpe ratio: if idle cash earns interest,
+    the Sharpe must measure the return *above* that, or sitting in cash would look skilful.
+    """
     return pd.Series(
         {
             "total_return": total_return(returns),
             "annual_return": annualized_return(returns, periods_per_year),
             "annual_volatility": annualized_volatility(returns, periods_per_year),
-            "sharpe": sharpe_ratio(returns, periods_per_year=periods_per_year),
+            "sharpe": sharpe_ratio(returns, risk_free, periods_per_year),
             "max_drawdown": max_drawdown(returns),
         }
     )
 
 
-def compare(results: dict[str, pd.Series], periods_per_year: int = TRADING_DAYS) -> pd.DataFrame:
+def compare(
+    results: dict[str, pd.Series], periods_per_year: int = TRADING_DAYS, risk_free: float = 0.0
+) -> pd.DataFrame:
     """Metrics table with one column per strategy, e.g. {"strategy": r1, "buy_and_hold": r2}."""
-    return pd.DataFrame({name: summary(r, periods_per_year) for name, r in results.items()})
+    return pd.DataFrame(
+        {name: summary(r, periods_per_year, risk_free) for name, r in results.items()}
+    )

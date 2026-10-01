@@ -116,3 +116,8 @@ def test_identical_strategies_have_zero_sharpe_difference():
 def test_confidence_interval_known_values():
     low, high = confidence_interval(np.arange(101.0), level=0.95)
     assert (low, high) == pytest.approx((2.5, 97.5))
+
+
+def test_confidence_interval_of_all_nan_samples_is_nan():
+    low, high = confidence_interval(np.array([np.nan, np.nan]))
+    assert np.isnan(low) and np.isnan(high)
