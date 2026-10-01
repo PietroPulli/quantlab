@@ -1,8 +1,8 @@
 # Lezione Fase 1 — Dati e rendimenti
 
-> Attenzione: il codice di questa fase è stato scritto ma **non ho potuto eseguire pytest**
-> (vedi `REPORT_NOTTE.md`). Il primo esercizio, prima di studiare, è lanciare `pytest` e
-> vedere se passa davvero.
+> Aggiornamento: ora `pytest` gira e tutti i test passano. L'unico test che falliva
+> (`test_suspicious_jump_is_flagged`) ha portato ad abbassare la soglia dei salti al 25%.
+> La prova con dati veri di SPY e AAPL e il notebook `01_esplora_dati.ipynb` sono fatti.
 
 ## 1. Concetti
 
@@ -109,6 +109,7 @@ vuota = tutto ok).
 1. **`cumulative_returns(returns)`** in `returns.py`: da rendimenti semplici alla curva
    `(1 + r).cumprod() - 1`. Scrivi il test: rendimenti `[0.1, 0.1]` danno `[0.1, 0.21]`.
 2. **`annualized_volatility(returns, periods=252)`**: deviazione standard × `sqrt(periods)`.
-   Test: una serie costante ha volatilità 0.
+   Test: una serie costante ha volatilità 0. (Ora esiste già in `metrics.py`: scrivila da solo
+   in un file a parte e poi confronta con la versione esistente.)
 3. **Un nuovo controllo in `validate_prices`**: segnala i giorni con volume o prezzo *identico*
    per più di 5 giorni di fila (dato "congelato"). Scrivi prima il test che deve fallire.
