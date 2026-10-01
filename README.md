@@ -14,6 +14,14 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## L'app
+Scegli strategia, titolo, parametri e costi; premi un bottone e ottieni il verdetto contro buy & hold.
+```bash
+pip install -e ".[app]"
+streamlit run app/streamlit_app.py
+```
+Si apre nel browser su http://localhost:8501.
+
 ## Documentazione
 - [Visione](docs/VISIONE.md)
 - [Roadmap](docs/ROADMAP.md)
