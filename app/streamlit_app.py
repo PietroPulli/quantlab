@@ -250,6 +250,18 @@ st.write(
     f"intervallo al 95% da {low:+.2f} a {high:+.2f}. "
     f"La strategia è avanti nel {report.share_beating:.0%} dei campioni bootstrap."
 )
+
+# Data snooping: every new idea tested on the same data is another lottery ticket.
+# Remember what was tried on each ticker in this session (a grid counts as all its combinations).
+tried = st.session_state.setdefault("tried", {}).setdefault(ticker, {})
+tried[f"{name}: {grid if grid else used}"] = len(grid) if grid else 1
+if len(tried) > 1:
+    st.warning(
+        f"Su {ticker} in questa sessione hai provato {len(tried)} strategie diverse "
+        f"({sum(tried.values())} combinazioni di parametri in tutto). Più idee provi sugli stessi dati, "
+        "più è probabile che la migliore sembri buona solo per fortuna. "
+        "Il verdetto qui sopra non ne tiene conto: vale per un solo tentativo."
+    )
 for warning in report.warnings:
     st.warning(warning)
 

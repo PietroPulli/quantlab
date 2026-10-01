@@ -88,3 +88,13 @@ def test_app_custom_rule_with_two_conditions(fake_prices):
     assert not at.exception
     assert any("Prezzo > Media mobile 100g E z-score (distanza dalla media) 10g < -1" in m.value
                for m in at.markdown)
+
+
+def test_app_warns_after_several_attempts_on_the_same_ticker(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.sidebar.button[0].click().run()
+    assert not any("in questa sessione" in w.value for w in at.warning)  # first try: no warning
+    at.sidebar.selectbox[0].select("Momentum 12-1").run()
+    assert any("hai provato 2 strategie diverse" in w.value for w in at.warning)
+    at.sidebar.toggle[0].set_value(True).run()  # grid of 4 combinations
+    assert any("3 strategie diverse (6 combinazioni" in w.value for w in at.warning)
