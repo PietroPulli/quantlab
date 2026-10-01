@@ -15,6 +15,7 @@ import streamlit as st
 from quantlab import data
 from quantlab.metrics import calmar_ratio, drawdown
 from quantlab.report import evaluate_strategy, format_report
+from quantlab.rules import Condition, Indicator, rule_strategy
 from quantlab.strategies import breakout, mean_reversion, momentum, moving_average_crossover
 from quantlab.validation import param_grid
 
@@ -60,6 +61,55 @@ STRATEGY_UI = {
 }
 
 
+INDICATOR_LABELS = {
+    "price": "Prezzo",
+    "sma": "Media mobile",
+    "return": "Rendimento degli ultimi N giorni",
+    "zscore": "z-score (distanza dalla media)",
+    "high": "Massimo degli ultimi N giorni",
+    "low": "Minimo degli ultimi N giorni",
+}
+OPERATOR_LABELS = {">": "sopra (>)", "<": "sotto (<)", ">=": "sopra o uguale (≥)", "<=": "sotto o uguale (≤)"}
+
+
+def describe_indicator(ind: Indicator | float) -> str:
+    """Short Italian label, e.g. 'Media mobile 100g' or '0.05'."""
+    if not isinstance(ind, Indicator):
+        return f"{ind:g}"
+    label = INDICATOR_LABELS[ind.name].replace(" degli ultimi N giorni", "")
+    return label if ind.name == "price" else f"{label} {ind.window}g"
+
+
+def describe(condition: Condition) -> str:
+    return f"{describe_indicator(condition.left)} {condition.op} {describe_indicator(condition.right)}"
+
+
+def indicator_input(label: str, key: str, default: Indicator) -> Indicator:
+    """Two widgets (which indicator, how many days) -> an Indicator."""
+    names = list(INDICATOR_LABELS)
+    name = st.selectbox(label, names, index=names.index(default.name),
+                        format_func=INDICATOR_LABELS.get, key=f"{key}-name")
+    if name == "price":
+        return Indicator("price")
+    window = st.number_input("N giorni", 2, 504, max(default.window, 20), key=f"{key}-window")
+    return Indicator(name, int(window))
+
+
+def condition_input(key: str, left: Indicator, op: str, right: Indicator) -> Condition:
+    """Widgets for one rule: <indicator> <operator> <indicator or number>."""
+    left_ind = indicator_input("Se", f"{key}-left", left)
+    op = st.selectbox("è", list(OPERATOR_LABELS), index=list(OPERATOR_LABELS).index(op),
+                      format_func=OPERATOR_LABELS.get, key=f"{key}-op")
+    if st.radio("di", ["un indicatore", "un numero"], horizontal=True, key=f"{key}-kind") == "un numero":
+        right_value: Indicator | float = st.number_input(
+            "Numero", value=0.0, step=0.01, format="%.2f", key=f"{key}-number",
+            help="Rendimenti in decimali (0.05 = +5%). z-score in deviazioni standard (-1 = 1 sotto la media).",
+        )
+    else:
+        right_value = indicator_input("Indicatore", f"{key}-right", right)
+    return Condition(left_ind, op, right_value)
+
+
 @st.cache_data(show_spinner="Scarico i prezzi...")
 def get_prices(ticker: str, start: str, end: str) -> pd.Series:
     """Prices for one ticker, from the local cache or Yahoo Finance (cached per session too)."""
@@ -82,22 +132,42 @@ with st.sidebar:
     start = col_a.date_input("Dal", value=date(2015, 1, 1), min_value=date(1995, 1, 1))
     end = col_b.date_input("Al", value=date(2025, 12, 31), max_value=date.today())
 
-    name = st.selectbox("Strategia", list(STRATEGY_UI))
-    ui = STRATEGY_UI[name]
-    st.info(ui["rule"])
+    mode = st.radio("Tipo di strategia", ["Strategia pronta", "Crea la tua regola"], key="mode", horizontal=True)
 
-    st.header("2. Parametri")
-    optimize_params = st.toggle(
-        "Fai scegliere i parametri al passato",
-        help="Prova alcune combinazioni sul primo 70% dei dati e tiene la migliore. "
-        "Il giudizio vero si fa poi sul restante 30%, mai visto durante la scelta.",
-    )
-    params = {}
-    if optimize_params:
-        st.caption(f"Combinazioni provate: {ui['grid']}")
+    if mode == "Strategia pronta":
+        name = st.selectbox("Strategia", list(STRATEGY_UI))
+        ui = STRATEGY_UI[name]
+        st.info(ui["rule"])
+        strategy_func = ui["func"]
+
+        st.header("2. Parametri")
+        optimize_params = st.toggle(
+            "Fai scegliere i parametri al passato",
+            help="Prova alcune combinazioni sul primo 70% dei dati e tiene la migliore. "
+            "Il giudizio vero si fa poi sul restante 30%, mai visto durante la scelta.",
+        )
+        params, grid = {}, None
+        if optimize_params:
+            grid = ui["grid"]
+            st.caption(f"Combinazioni provate: {grid}")
+        else:
+            for key, (label, lo, hi, default, step) in ui["params"].items():
+                params[key] = st.slider(label, lo, hi, default, step, key=f"{name}-{key}")
     else:
-        for key, (label, lo, hi, default, step) in ui["params"].items():
-            params[key] = st.slider(label, lo, hi, default, step, key=f"{name}-{key}")
+        st.header("2. La tua regola")
+        st.markdown("**Compra quando...**")
+        entry = condition_input("entry", Indicator("price"), ">", Indicator("sma", 100))
+        st.caption(f"Entrata: {describe(entry)}")
+        exit_rule = None
+        if st.toggle("Aggiungi una regola di uscita", key="has_exit",
+                     help="Senza uscita sei investito solo nei giorni in cui la regola di entrata è vera. "
+                     "Con un'uscita, una volta entrato resti dentro finché non scatta l'uscita."):
+            st.markdown("**Vendi quando...**")
+            exit_rule = condition_input("exit", Indicator("price"), "<", Indicator("sma", 50))
+            st.caption(f"Uscita: {describe(exit_rule)}")
+        strategy_func, grid = rule_strategy, None
+        params = {"entry": entry, "exit": exit_rule}
+        name = "La tua regola"
 
     st.header("3. Costi per operazione")
     commission = st.number_input("Commissione (%)", 0.0, 1.0, 0.10, 0.01) / 100
@@ -132,9 +202,9 @@ try:
     with st.spinner("Simulo la strategia e faccio il bootstrap..."):
         report = evaluate_strategy(
             prices,
-            ui["func"],
-            params=None if optimize_params else params,
-            grid=ui["grid"] if optimize_params else None,
+            strategy_func,
+            params=None if grid else params,
+            grid=grid,
             name=f"{name} su {ticker}",
             commission=commission,
             slippage=slippage,
@@ -154,8 +224,12 @@ else:
         "### ⚖️ Nessuna prova che batta il compra e tieni\n"
         "La differenza è compatibile con la fortuna."
     )
+if strategy_func is rule_strategy:
+    used = describe(entry) + (f"; uscita: {describe(exit_rule)}" if exit_rule else "")
+else:
+    used = report.params
 st.write(
-    f"Parametri usati: `{report.params}` · periodo di prova (out-of-sample) dal "
+    f"Parametri usati: `{used}` · periodo di prova (out-of-sample) dal "
     f"**{report.split.date()}**. Differenza di Sharpe {report.sharpe_diff:+.2f}, "
     f"intervallo al 95% da {low:+.2f} a {high:+.2f}. "
     f"La strategia è avanti nel {report.share_beating:.0%} dei campioni bootstrap."

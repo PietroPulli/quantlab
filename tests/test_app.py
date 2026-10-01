@@ -58,3 +58,23 @@ def test_app_rejects_invalid_parameters(fake_prices):
     at.sidebar.slider[1].set_value(50).run()  # slow 50 < fast
     at.sidebar.button[0].click().run()
     assert any("Parametri non validi" in e.value for e in at.error)
+
+
+def test_app_custom_rule_gives_a_verdict(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.radio(key="mode").set_value("Crea la tua regola").run()
+    at.toggle(key="has_exit").set_value(True).run()
+    at.sidebar.button[0].click().run()
+    assert not at.exception
+    assert at.table
+    assert any("Prezzo > Media mobile 100g" in m.value for m in at.markdown)
+
+
+def test_app_custom_rule_against_a_number(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.radio(key="mode").set_value("Crea la tua regola").run()
+    at.selectbox(key="entry-left-name").set_value("return").run()
+    at.radio(key="entry-kind").set_value("un numero").run()
+    at.sidebar.button[0].click().run()
+    assert not at.exception
+    assert any("Rendimento 20g > 0" in m.value for m in at.markdown)
