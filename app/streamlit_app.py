@@ -9,10 +9,12 @@ This file is only the user interface. Every number comes from the quantlab libra
 from datetime import date
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
 from quantlab import data
+from quantlab.backtest import run_backtest, trade_log
 from quantlab.metrics import calmar_ratio, drawdown
 from quantlab.report import evaluate_strategy, format_report
 from quantlab.rules import Condition, Indicator, rule_strategy
@@ -189,7 +191,7 @@ with st.sidebar:
     commission = st.number_input("Commissione (%)", 0.0, 1.0, 0.10, 0.01) / 100
     slippage = st.number_input("Slippage (%)", 0.0, 1.0, 0.05, 0.01) / 100
 
-    run = st.button("Metti alla prova", type="primary", use_container_width=True)
+    run = st.button("Metti alla prova", type="primary", width="stretch")
 
 # A button is True only on the run right after the click: remember it, so the
 # results stay on screen (and update) when the user then moves a slider.
@@ -309,6 +311,40 @@ with right:
         st.subheader("Walk-forward")
         st.caption("Riscelta dei parametri ogni anno, usando solo i 3 anni precedenti.")
         st.table(pretty(report.walk_forward))
+
+# ---- When does it trade? ----
+positions = run_backtest(prices, strategy_func(prices, **report.params), commission, slippage)["position"]
+trades = trade_log(prices, positions)
+trades = trades[trades.index >= report.split]
+oos_prices = prices[prices.index >= report.split]
+
+st.subheader("Quando compra e vende (periodo di prova)")
+years = len(oos_prices) / 252
+st.caption(
+    f"{len(trades)} operazioni in {years:.1f} anni ({len(trades) / years:.1f} all'anno). "
+    "Ogni operazione paga commissione e slippage: più operazioni, più costi."
+)
+price_line = (
+    alt.Chart(oos_prices.rename("price").rename_axis("date").reset_index())
+    .mark_line(color="#8a8f98", strokeWidth=1.5)
+    .encode(x=alt.X("date:T", title=None), y=alt.Y("price:Q", title="Prezzo", scale=alt.Scale(zero=False)))
+)
+trade_points = (
+    alt.Chart(trades.rename_axis("date").reset_index())
+    .mark_point(filled=True, size=70)
+    .encode(
+        x="date:T",
+        y="price:Q",
+        color=alt.Color("action:N", title=None,
+                        scale=alt.Scale(domain=["buy", "sell"], range=["#1a9850", "#d73027"]),
+                        legend=alt.Legend(labelExpr="datum.label == 'buy' ? 'Compra' : 'Vende'")),
+        shape=alt.Shape("action:N", scale=alt.Scale(domain=["buy", "sell"], range=["triangle-up", "triangle-down"]),
+                        legend=None),
+        tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("action:N", title="Operazione"),
+                 alt.Tooltip("price:Q", title="Prezzo", format=".2f")],
+    )
+)
+st.altair_chart(price_line + trade_points, width="stretch")
 
 with st.expander("Report completo in testo"):
     st.code(format_report(report), language=None)

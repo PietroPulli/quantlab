@@ -8,6 +8,7 @@ import pandas.testing as pdt
 import pytest
 
 from quantlab.backtest import (
+    trade_log,
     DEFAULT_COMMISSION,
     DEFAULT_SLIPPAGE,
     run_backtest,
@@ -109,3 +110,28 @@ def test_misaligned_index_is_rejected():
 def test_turnover_per_year():
     positions = pd.Series([0.0, 1.0, 1.0, 0.0])  # buy once, sell once = 2x capital traded
     assert turnover_per_year(positions, periods_per_year=4) == pytest.approx(2.0)
+
+
+def test_trade_log_dates_trades_at_the_signal_close():
+    idx = pd.bdate_range("2020-01-01", periods=6)
+    prices = pd.Series([10.0, 11, 12, 13, 14, 15], index=idx)
+    signals = pd.Series([0.0, 1, 1, 0, 0, 1], index=idx)  # buy signal at close of day 1
+    log = trade_log(prices, run_backtest(prices, signals)["position"])
+    assert log["action"].tolist() == ["buy", "sell"]
+    assert log.index.tolist() == [idx[1], idx[3]]  # executed when the signal changed
+    assert log["price"].tolist() == [11.0, 13.0]  # at that day's close, never a later price
+    # the last buy signal (day 5) has no next day to trade on, so it is not in the log
+
+
+def test_trade_log_long_to_short_is_one_sell_of_size_two():
+    idx = pd.bdate_range("2020-01-01", periods=4)
+    prices = pd.Series([10.0, 11, 12, 13], index=idx)
+    log = trade_log(prices, run_backtest(prices, pd.Series([1.0, -1, -1, -1], index=idx))["position"])
+    assert log["action"].tolist() == ["buy", "sell"]
+    assert log["size"].tolist() == [1.0, 2.0]
+
+
+def test_trade_log_is_empty_without_trades():
+    idx = pd.bdate_range("2020-01-01", periods=4)
+    prices = pd.Series([10.0, 11, 12, 13], index=idx)
+    assert trade_log(prices, pd.Series(0.0, index=idx)).empty

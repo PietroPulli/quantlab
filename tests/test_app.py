@@ -41,6 +41,7 @@ def test_app_gives_a_verdict_for_every_strategy(fake_prices, strategy):
     at.sidebar.button[0].click().run()
     assert not at.exception
     assert at.table, "the metrics tables should be shown"
+    assert any("operazioni in" in c.value for c in at.caption), "the trade chart caption should be shown"
 
 
 def test_app_with_optimised_parameters_shows_walk_forward(fake_prices):

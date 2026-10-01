@@ -59,3 +59,22 @@ def turnover_per_year(positions: pd.Series, periods_per_year: int = 252) -> floa
     """Average fraction of capital traded per year (1.0 = the whole portfolio once)."""
     traded = positions.diff().fillna(positions).abs().sum()
     return float(traded / len(positions) * periods_per_year) if len(positions) else np.nan
+
+
+def trade_log(prices: pd.Series, positions: pd.Series) -> pd.DataFrame:
+    """List of trades: date, "buy"/"sell", traded fraction of capital and execution price.
+
+    The position held on day t was decided and traded at the close of day t-1, so a
+    change of position between t and t+1 is a trade executed on day t at that close.
+    """
+    change = positions.diff().fillna(positions)  # change[t]: traded at the close of t-1
+    traded = change.shift(-1).fillna(0.0)  # traded[t]: executed at the close of t
+    executed = traded[traded != 0]
+    return pd.DataFrame(
+        {
+            "action": np.where(executed > 0, "buy", "sell"),
+            "size": executed.abs(),
+            "price": prices[executed.index],
+        },
+        index=executed.index,
+    )
