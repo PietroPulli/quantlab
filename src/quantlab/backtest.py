@@ -91,3 +91,17 @@ def trade_log(prices: pd.Series, positions: pd.Series) -> pd.DataFrame:
         },
         index=executed.index,
     )
+
+
+def current_signal(signals: pd.Series) -> tuple[pd.Timestamp, float, pd.Timestamp]:
+    """What the rule says at the last available close, and since when it has said so.
+
+    Returns (date of the last signal, its value, first date of the current streak).
+    A signal computed at the close of that date is traded from the next session on.
+    """
+    if signals.empty:
+        raise ValueError("no signals")
+    last = signals.iloc[-1]
+    different = (signals != last).to_numpy().nonzero()[0]  # positions where the value differs
+    since = signals.index[different[-1] + 1] if len(different) else signals.index[0]
+    return signals.index[-1], float(last), since

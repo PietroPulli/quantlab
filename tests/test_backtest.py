@@ -8,6 +8,7 @@ import pandas.testing as pdt
 import pytest
 
 from quantlab.backtest import (
+    current_signal,
     trade_log,
     DEFAULT_COMMISSION,
     DEFAULT_SLIPPAGE,
@@ -167,3 +168,20 @@ def test_cash_rate_in_percent_is_rejected():
     prices = _zigzag()
     with pytest.raises(ValueError):
         run_backtest(prices, pd.Series(0.0, index=prices.index), cash_rate=4.0)  # 400%: a typo for 0.04
+
+
+def test_current_signal_reports_the_last_value_and_when_it_started():
+    idx = pd.bdate_range("2024-01-01", periods=6)
+    signals = pd.Series([0.0, 1, 1, 0, 1, 1], index=idx)
+    day, value, since = current_signal(signals)
+    assert (day, value, since) == (idx[5], 1.0, idx[4])  # long since day 4, not since day 1
+
+
+def test_current_signal_without_changes_starts_at_the_beginning():
+    idx = pd.bdate_range("2024-01-01", periods=3)
+    assert current_signal(pd.Series(0.0, index=idx)) == (idx[2], 0.0, idx[0])
+
+
+def test_current_signal_of_empty_series_is_an_error():
+    with pytest.raises(ValueError):
+        current_signal(pd.Series([], dtype=float))

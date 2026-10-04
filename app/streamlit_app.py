@@ -15,7 +15,7 @@ import pandas as pd
 import streamlit as st
 
 from quantlab import data
-from quantlab.backtest import run_backtest, trade_log
+from quantlab.backtest import current_signal, run_backtest, trade_log
 from quantlab.metrics import calmar_ratio, drawdown
 from quantlab.report import evaluate_strategy, format_report
 from quantlab.rules import Condition, Indicator, rule_strategy
@@ -304,6 +304,33 @@ if len(tried) > 1:
     )
 for warning in report.warnings:
     st.warning(warning)
+
+# ---- What the rule says today ----
+# The test above stops at the chosen end date; here we apply the same rule, with the same
+# parameters, to prices up to the latest close available.
+st.subheader("Cosa dice la regola oggi")
+try:
+    live_prices = get_prices(ticker, str(start), str(date.today()))
+    day, value, since = current_signal(strategy_func(live_prices, **report.params))
+except Exception as exc:  # network problems, or a rule that cannot be applied
+    st.info(f"Non riesco a calcolare il segnale di oggi: {exc}")
+else:
+    state = "DENTRO" if value > 0 else "FUORI"
+    meaning = ("essere investiti in" if value > 0 else "stare in contanti, fuori da")
+    with st.container(border=True):
+        cols = st.columns([1, 2])
+        cols[0].markdown(f'<div class="ql-tag">Segnale alla chiusura del {day.date()}</div>'
+                         f'<div class="ql-title">{state}</div>', unsafe_allow_html=True)
+        cols[1].markdown(
+            f"Con i prezzi fino al **{day.date()}** (ultima chiusura {live_prices.iloc[-1]:.2f}), "
+            f"la regola dice di {meaning} **{ticker}**, ininterrottamente dal **{since.date()}**. "
+            "Il segnale vale dalla seduta successiva."
+        )
+    st.caption(
+        "Questo è il risultato della tua regola applicata ai prezzi di oggi, non un consiglio di investimento. "
+        "Quanto fidarsi della regola lo dice il verdetto qui sopra"
+        + (": e qui non ha battuto il compra e tieni." if tone != "good" else ".")
+    )
 
 # ---- Numbers ----
 oos_returns = report.returns[report.returns.index >= report.split]

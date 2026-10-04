@@ -117,3 +117,11 @@ def test_app_shows_no_emoji(fake_prices):
     at.sidebar.button[0].click().run()
     text = " ".join(m.value for m in at.markdown)
     assert not any(ch in text for ch in "✅❌⚖")
+
+
+def test_app_shows_what_the_rule_says_today(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.sidebar.button[0].click().run()
+    assert any("Cosa dice la regola oggi" in h.value for h in at.subheader)
+    assert any("DENTRO" in m.value or "FUORI" in m.value for m in at.markdown)
+    assert any("non un consiglio di investimento" in c.value for c in at.caption)
