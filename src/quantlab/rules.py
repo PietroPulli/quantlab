@@ -4,10 +4,13 @@ A rule compares an indicator with another indicator or with a number. A strategy
 an entry rule plus an optional exit rule. Every indicator on day t uses only prices
 up to and including day t, so the strategies built here have no look-ahead bias
 (the backtest then shifts the signal by one day before trading).
+
+An indicator can also be computed on an external series instead of the traded asset,
+e.g. "buy the S&P 500 when the VIX (market fear index) is below 20".
 """
 
 import operator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -28,13 +31,28 @@ OPERATORS = {">": operator.gt, "<": operator.lt, ">=": operator.ge, "<=": operat
 class Indicator:
     name: str  # a key of INDICATORS
     window: int = 1  # days of history used (ignored by "price")
+    # Optional external daily series (e.g. the VIX) used instead of the traded prices.
+    # Excluded from ==/hash: comparing two Series element by element has no single answer.
+    source: pd.Series | None = field(default=None, compare=False, hash=False, repr=False)
+    label: str = ""  # human name of the source, e.g. "VIX"
 
     def compute(self, prices: pd.Series) -> pd.Series:
         if self.name not in INDICATORS:
             raise ValueError(f"unknown indicator {self.name!r}, choose from {list(INDICATORS)}")
         if self.name != "price" and self.window < 2:
             raise ValueError(f"{self.name} needs a window of at least 2 days")
-        return INDICATORS[self.name][1](prices, self.window)
+        return INDICATORS[self.name][1](self._base(prices), self.window)
+
+    def _base(self, prices: pd.Series) -> pd.Series:
+        """The series the indicator is computed on, on the same days as `prices`.
+
+        An external source may trade on different days (other holidays): for each day of
+        `prices` take its last value known on that day (forward fill), never a later one.
+        """
+        if self.source is None:
+            return prices
+        source = self.source.dropna().sort_index()
+        return source.reindex(prices.index, method="ffill")
 
 
 @dataclass(frozen=True)

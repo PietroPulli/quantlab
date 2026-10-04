@@ -6,7 +6,7 @@ import pandas.testing as pdt
 import pytest
 
 from quantlab import data
-from quantlab.data import load_prices, validate_prices
+from quantlab.data import latest_news, load_prices, validate_prices
 
 
 def _clean() -> pd.DataFrame:
@@ -86,3 +86,20 @@ def test_download_raises_on_empty(monkeypatch):
     monkeypatch.setitem(sys.modules, "yfinance", fake)
     with pytest.raises(ValueError):
         data.download_prices(["AAA"], "2024-01-01", "2024-02-01")
+
+
+def test_latest_news_keeps_only_the_useful_fields(monkeypatch):
+    import sys
+    import types
+
+    class FakeSearch:
+        def __init__(self, query, news_count):
+            self.news = [
+                {"title": "Apple sale", "publisher": "X", "link": "https://x", "providerPublishTime": 0, "uuid": "1"},
+                {"title": "", "publisher": "Y"},  # no title: dropped
+            ]
+
+    monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(Search=FakeSearch))
+    news = latest_news("AAPL")
+    assert news == [{"title": "Apple sale", "publisher": "X", "link": "https://x",
+                     "published": pd.Timestamp("1970-01-01", tz="UTC")}]

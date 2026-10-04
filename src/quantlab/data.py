@@ -78,3 +78,24 @@ def validate_prices(df: pd.DataFrame) -> list[str]:
             )
 
     return problems
+
+
+def latest_news(ticker: str, count: int = 5) -> list[dict]:
+    """Latest headlines about `ticker` from Yahoo Finance: title, publisher, link, published.
+
+    Context only: free sources keep no dated archive of past news, so headlines cannot
+    be backtested honestly and never enter any calculation in quantlab.
+    """
+    import yfinance as yf  # imported here so tests never need the network stack
+
+    items = yf.Search(ticker, news_count=count).news or []
+    return [
+        {
+            "title": item.get("title", ""),
+            "publisher": item.get("publisher", ""),
+            "link": item.get("link", ""),
+            "published": pd.to_datetime(item.get("providerPublishTime"), unit="s", utc=True),
+        }
+        for item in items[:count]
+        if item.get("title")
+    ]
