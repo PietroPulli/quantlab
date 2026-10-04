@@ -15,6 +15,12 @@ import quantlab.data  # noqa: E402
 APP = str(Path(__file__).resolve().parents[1] / "app" / "streamlit_app.py")
 
 
+def _advanced() -> AppTest:
+    """Open the app and switch to the advanced view (the simple one is the default)."""
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    return at.radio(key="view").set_value("Approfondita").run()
+
+
 @pytest.fixture
 def fake_prices(monkeypatch):
     """Replace the download with a seeded random walk of ~6 years."""
@@ -29,7 +35,7 @@ def fake_prices(monkeypatch):
 
 
 def test_app_waits_for_the_button(fake_prices):
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = _advanced()
     assert not at.exception
     assert any("Metti alla prova" in box.value for box in at.info)
     assert not at.table  # no results before the click
@@ -37,7 +43,7 @@ def test_app_waits_for_the_button(fake_prices):
 
 @pytest.mark.parametrize("strategy", ["Breakout", "Momentum 12-1", "Incrocio medie mobili", "Mean reversion"])
 def test_app_gives_a_verdict_for_every_strategy(fake_prices, strategy):
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = _advanced()
     at.sidebar.selectbox[0].select(strategy).run()
     at.sidebar.button[0].click().run()
     assert not at.exception
@@ -46,7 +52,7 @@ def test_app_gives_a_verdict_for_every_strategy(fake_prices, strategy):
 
 
 def test_app_with_optimised_parameters_shows_walk_forward(fake_prices):
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = _advanced()
     at.sidebar.toggle[0].set_value(True).run()
     at.sidebar.button[0].click().run()
     assert not at.exception
@@ -54,7 +60,7 @@ def test_app_with_optimised_parameters_shows_walk_forward(fake_prices):
 
 
 def test_app_rejects_invalid_parameters(fake_prices):
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = _advanced()
     at.sidebar.selectbox[0].select("Incrocio medie mobili").run()
     at.sidebar.slider[0].set_value(100).run()  # fast 100
     at.sidebar.slider[1].set_value(50).run()  # slow 50 < fast
@@ -63,7 +69,7 @@ def test_app_rejects_invalid_parameters(fake_prices):
 
 
 def test_app_custom_rule_gives_a_verdict(fake_prices):
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = _advanced()
     at.radio(key="mode").set_value("Crea la tua regola").run()
     at.toggle(key="has_exit").set_value(True).run()
     at.sidebar.button[0].click().run()
@@ -73,7 +79,7 @@ def test_app_custom_rule_gives_a_verdict(fake_prices):
 
 
 def test_app_custom_rule_against_a_number(fake_prices):
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = _advanced()
     at.radio(key="mode").set_value("Crea la tua regola").run()
     at.selectbox(key="entry-left-name").set_value("return").run()
     at.radio(key="entry-kind").set_value("un numero").run()
@@ -83,7 +89,7 @@ def test_app_custom_rule_against_a_number(fake_prices):
 
 
 def test_app_custom_rule_with_two_conditions(fake_prices):
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = _advanced()
     at.radio(key="mode").set_value("Crea la tua regola").run()
     at.toggle(key="entry_and").set_value(True).run()
     at.sidebar.button[0].click().run()
@@ -93,7 +99,7 @@ def test_app_custom_rule_with_two_conditions(fake_prices):
 
 
 def test_app_warns_after_several_attempts_on_the_same_ticker(fake_prices):
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = _advanced()
     at.sidebar.button[0].click().run()
     assert not any("in questa sessione" in w.value for w in at.warning)  # first try: no warning
     at.sidebar.selectbox[0].select("Momentum 12-1").run()
@@ -103,7 +109,7 @@ def test_app_warns_after_several_attempts_on_the_same_ticker(fake_prices):
 
 
 def test_app_cash_rate_changes_the_result(fake_prices):
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = _advanced()
     at.number_input(key="cash_rate").set_value(0.0).run()
     at.sidebar.button[0].click().run()
     zero = at.table[0].value.loc["Guadagno totale"].iloc[0]
@@ -113,15 +119,44 @@ def test_app_cash_rate_changes_the_result(fake_prices):
 
 
 def test_app_shows_no_emoji(fake_prices):
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = _advanced()
     at.sidebar.button[0].click().run()
     text = " ".join(m.value for m in at.markdown)
     assert not any(ch in text for ch in "✅❌⚖")
 
 
 def test_app_shows_what_the_rule_says_today(fake_prices):
-    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = _advanced()
     at.sidebar.button[0].click().run()
     assert any("Cosa dice la regola oggi" in h.value for h in at.subheader)
     assert any("DENTRO" in m.value or "FUORI" in m.value for m in at.markdown)
     assert any("non un consiglio di investimento" in c.value for c in at.caption)
+
+
+def test_simple_view_is_the_default_and_answers_in_euros(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not at.sidebar.button  # no sidebar controls in the simple view
+    at.button(key="simple_run").click().run()
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "1.000 € sarebbero diventati" in text
+    assert "L'idea dice:" in text or "L'idea dice:" in text
+
+
+@pytest.mark.parametrize("idea", ["Segui la tendenza", "Compra quando sfonda verso l'alto",
+                                  "Compra dopo un forte calo", "Compra ciò che è salito nell'ultimo anno"])
+def test_simple_view_works_for_every_idea(fake_prices, idea):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.selectbox(key="simple_idea").set_value(idea).run()
+    at.button(key="simple_run").click().run()
+    assert not at.exception
+    assert any("sarebbero diventati" in m.value for m in at.markdown)
+
+
+def test_simple_view_accepts_any_ticker(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.selectbox(key="simple_asset").set_value("Altro titolo...").run()
+    at.text_input(key="simple_ticker").set_value("msft").run()
+    at.button(key="simple_run").click().run()
+    assert not at.exception
+    assert any("su MSFT" in m.value for m in at.markdown)
