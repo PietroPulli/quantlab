@@ -99,3 +99,15 @@ def latest_news(ticker: str, count: int = 5) -> list[dict]:
         for item in items[:count]
         if item.get("title")
     ]
+
+
+def relevant_news(items: list[dict], terms: list[str]) -> list[dict]:
+    """Keep the headlines that mention at least one of `terms` as a whole word (any case).
+
+    A Yahoo search for "AAPL" also returns stories about other companies: a headline
+    is kept only if it names what we are looking at, e.g. "Apple".
+    """
+    import re
+
+    patterns = [re.compile(rf"\b{re.escape(t)}\b", re.IGNORECASE) for t in terms if t]
+    return [item for item in items if any(p.search(item["title"]) for p in patterns)]

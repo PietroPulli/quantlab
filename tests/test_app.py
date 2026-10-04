@@ -32,6 +32,9 @@ def fake_prices(monkeypatch):
         return pd.DataFrame({tickers[0]: values}, index=idx)
 
     monkeypatch.setattr(quantlab.data, "load_prices", fake_load)
+    fake_news = [{"title": "Notizia di prova su Apple e S&P 500", "publisher": "Test", "link": "https://example.com",
+                  "published": pd.Timestamp("2026-01-01 10:00", tz="UTC")}]
+    monkeypatch.setattr(quantlab.data, "latest_news", lambda query, count=5: fake_news)
 
 
 def test_app_waits_for_the_button(fake_prices):
@@ -144,7 +147,8 @@ def test_simple_view_is_the_default_and_answers_in_euros(fake_prices):
 
 
 @pytest.mark.parametrize("idea", ["Segui la tendenza", "Compra quando sfonda verso l'alto",
-                                  "Compra dopo un forte calo", "Compra ciò che è salito nell'ultimo anno"])
+                                  "Compra dopo un forte calo", "Compra ciò che è salito nell'ultimo anno",
+                                  "Esci quando il mercato ha paura", "Compra quando il mercato ha paura"])
 def test_simple_view_works_for_every_idea(fake_prices, idea):
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.selectbox(key="simple_idea").set_value(idea).run()
@@ -160,3 +164,23 @@ def test_simple_view_accepts_any_ticker(fake_prices):
     at.button(key="simple_run").click().run()
     assert not at.exception
     assert any("su MSFT" in m.value for m in at.markdown)
+
+
+def test_news_are_shown_as_context_only(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.button(key="simple_run").click().run()
+    assert any("Notizia di prova" in m.value for m in at.markdown)
+    assert any("le notizie non entrano nei calcoli" in c.value for c in at.caption)
+
+
+def test_advanced_rule_on_a_market_factor(fake_prices):
+    at = _advanced()
+    at.radio(key="mode").set_value("Crea la tua regola").run()
+    at.selectbox(key="entry-left-source").set_value("VIX (paura del mercato)").run()
+    at.selectbox(key="entry-left-name").set_value("price").run()
+    at.selectbox(key="entry-op").set_value("<").run()
+    at.radio(key="entry-kind").set_value("un numero").run()
+    at.number_input(key="entry-number").set_value(120.0).run()
+    at.sidebar.button[0].click().run()
+    assert not at.exception
+    assert any("VIX < 120" in html.unescape(m.value) for m in at.markdown)

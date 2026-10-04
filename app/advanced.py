@@ -8,13 +8,16 @@ import pandas as pd
 import streamlit as st
 
 from common import (
-    OPERATOR_LABELS,
+    FACTORS,
     INDICATOR_LABELS,
+    OPERATOR_LABELS,
     STRATEGY_UI,
     TIME_AXIS,
     comparison_chart,
     describe,
     get_prices,
+    load_factor,
+    show_news,
     verdict_tone,
 )
 from quantlab import data
@@ -41,16 +44,22 @@ ROW_NAMES = {
 }
 
 
+ASSET = "il titolo scelto"
+
+
 def indicator_input(label: str, key: str, default: Indicator) -> Indicator:
-    """Two widgets (which indicator, how many days) -> an Indicator."""
+    """Widgets (on what, which indicator, how many days) -> an Indicator."""
+    on = st.selectbox(f"{label}: calcolato su", [ASSET, *FACTORS], key=f"{key}-source",
+                      help="Il titolo stesso, oppure un fattore che muove tutto il mercato.")
+    source, short = (None, "") if on == ASSET else (load_factor(on), FACTORS[on][1])
     names = list(INDICATOR_LABELS)
-    name = st.selectbox(label, names, index=names.index(default.name),
-                        format_func=INDICATOR_LABELS.get, key=f"{key}-name")
+    name = st.selectbox("Indicatore", names, index=names.index(default.name), key=f"{key}-name",
+                        format_func=lambda n: "Valore" if (n == "price" and source is not None) else INDICATOR_LABELS[n])
     if name == "price":
-        return Indicator("price")
+        return Indicator("price", source=source, label=short)
     start_window = default.window if default.window >= 2 else 20  # "price" has no window
     window = st.number_input("N giorni", 2, 504, start_window, key=f"{key}-window")
-    return Indicator(name, int(window))
+    return Indicator(name, int(window), source=source, label=short)
 
 
 def condition_input(key: str, left: Indicator, op: str, right: Indicator | float) -> Condition:
@@ -71,7 +80,7 @@ def condition_input(key: str, left: Indicator, op: str, right: Indicator | float
         )
     else:
         default = Indicator("sma", 50) if right_is_number else right
-        right_value = indicator_input("Indicatore", f"{key}-right", default)
+        right_value = indicator_input("Confronta con", f"{key}-right", default)
     return Condition(left_ind, op, right_value)
 
 
@@ -315,3 +324,5 @@ def render() -> None:
 
     with st.expander("Report completo in testo"):
         st.code(format_report(report), language=None)
+
+    show_news(ticker)

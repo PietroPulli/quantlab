@@ -6,7 +6,7 @@ import pandas.testing as pdt
 import pytest
 
 from quantlab import data
-from quantlab.data import latest_news, load_prices, validate_prices
+from quantlab.data import latest_news, load_prices, relevant_news, validate_prices
 
 
 def _clean() -> pd.DataFrame:
@@ -103,3 +103,14 @@ def test_latest_news_keeps_only_the_useful_fields(monkeypatch):
     news = latest_news("AAPL")
     assert news == [{"title": "Apple sale", "publisher": "X", "link": "https://x",
                      "published": pd.Timestamp("1970-01-01", tz="UTC")}]
+
+
+def test_relevant_news_keeps_only_headlines_naming_the_asset():
+    items = [{"title": "Apple's AI advantage"}, {"title": "Amazon stock falls"},
+             {"title": "Pineapple prices"}, {"title": "APPLE hits record"}]
+    kept = [i["title"] for i in relevant_news(items, ["Apple"])]
+    assert kept == ["Apple's AI advantage", "APPLE hits record"]  # whole word, any case
+
+
+def test_relevant_news_with_no_terms_keeps_nothing():
+    assert relevant_news([{"title": "Anything"}], []) == []

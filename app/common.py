@@ -1,5 +1,6 @@
 """Pieces shared by the simple and the advanced view: style, strategies, prices, charts."""
 
+from datetime import date
 from pathlib import Path
 
 import altair as alt
@@ -81,6 +82,15 @@ INDICATOR_LABELS = {
     "high": "Massimo degli ultimi N giorni",
     "low": "Minimo degli ultimi N giorni",
 }
+# Market-wide factors with a daily history, usable inside rules: name -> (Yahoo ticker, short label)
+FACTORS = {
+    "VIX (paura del mercato)": ("^VIX", "VIX"),
+    "Tasso USA a 10 anni (%)": ("^TNX", "Tasso 10 anni"),
+    "Tasso USA a 3 mesi (%)": ("^IRX", "Tasso 3 mesi"),
+    "Dollaro (indice DXY)": ("DX-Y.NYB", "Dollaro"),
+    "Petrolio WTI": ("CL=F", "Petrolio"),
+    "Oro": ("GC=F", "Oro"),
+}
 OPERATOR_LABELS = {">": "sopra (>)", "<": "sotto (<)", ">=": "sopra o uguale (≥)", "<=": "sotto o uguale (≤)"}
 
 COLORS = {"strategy": "#1f4e79", "buy_and_hold": "#b5762a"}  # ink blue vs ochre
@@ -99,6 +109,40 @@ def get_prices(ticker: str, start: str, end: str) -> pd.Series:
     return data.load_prices([ticker], start, end, cache_dir=DATA_DIR)[ticker].dropna()
 
 
+def load_factor(name: str) -> pd.Series:
+    """Full daily history of a factor up to today (rules only ever read past values of it)."""
+    return get_prices(FACTORS[name][0], "2000-01-01", str(date.today()))
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _news(query: str) -> list[dict]:
+    return data.latest_news(query, count=10)
+
+
+def show_news(query: str, terms: list[str] | None = None) -> None:
+    """Latest headlines as context, clearly kept apart from the calculations.
+
+    With `terms`, only headlines that name the asset are shown (a search also returns
+    stories about other companies). Without, the raw search results are shown, saying so.
+    """
+    st.subheader("Ultime notizie")
+    try:
+        found = _news(query)
+    except Exception:  # news are optional: never break the page for them
+        found = []
+    news = data.relevant_news(found, terms)[:5] if terms else found[:5]
+    if not news:
+        st.caption(f"Nessuna notizia recente che parli direttamente di {terms[0] if terms else query}.")
+    elif not terms:
+        st.caption(f"Risultati della ricerca «{query}» su Yahoo Finance: non tutti riguardano direttamente il titolo.")
+    for item in news:
+        when = item["published"].tz_convert("Europe/Rome").strftime("%d/%m %H:%M")
+        st.markdown(f"[{item['title']}]({item['link']})<br><span style='color:#6b736c;font-size:0.8rem'>"
+                    f"{item['publisher']} · {when}</span>", unsafe_allow_html=True)
+    st.caption("Solo contesto: le notizie non entrano nei calcoli. Non esiste un archivio gratuito di notizie "
+               "datate con cui verificare onestamente se una regola basata sulle notizie avrebbe funzionato.")
+
+
 def verdict_tone(report: StrategyReport) -> str:
     """'good', 'bad' or 'neutral' from the bootstrap interval of the Sharpe difference."""
     low, high = report.sharpe_diff_ci
@@ -114,6 +158,8 @@ def describe_indicator(ind: Indicator | float) -> str:
     if not isinstance(ind, Indicator):
         return f"{ind:g}"
     label = INDICATOR_LABELS[ind.name].replace(" degli ultimi N giorni", "")
+    if ind.label:  # computed on a factor, e.g. "VIX" or "Media mobile 20g di VIX"
+        return ind.label if ind.name == "price" else f"{label} {ind.window}g di {ind.label}"
     return label if ind.name == "price" else f"{label} {ind.window}g"
 
 
@@ -135,7 +181,7 @@ def comparison_chart(table: pd.DataFrame, labels: dict, y_title: str, y_format: 
         .encode(
             x=TIME_AXIS,
             y=alt.Y("value:Q", title=y_title, axis=alt.Axis(format=y_format, labelExpr=NUMBERS_IT), scale=alt.Scale(zero=False)),
-            color=alt.Color("series:N", title=None, legend=alt.Legend(orient="top"),
+            color=alt.Color("series:N", title=None, legend=alt.Legend(orient="top", labelLimit=0),
                             scale=alt.Scale(domain=[labels[k] for k in COLORS], range=list(COLORS.values()))),
             tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("series:N", title="Serie"),
                      alt.Tooltip("value:Q", title=y_title, format=y_format)],

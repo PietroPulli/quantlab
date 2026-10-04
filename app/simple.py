@@ -5,7 +5,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from common import comparison_chart, get_prices, verdict_tone
+from common import comparison_chart, get_prices, load_factor, show_news, verdict_tone
 from quantlab.backtest import DEFAULT_COMMISSION, DEFAULT_SLIPPAGE, current_signal, run_backtest, trade_log
 from quantlab.report import evaluate_strategy
 from quantlab.rules import Condition, Indicator, rule_strategy
@@ -28,7 +28,29 @@ ASSETS = {  # what people recognise -> Yahoo ticker
     "Altro titolo...": None,
 }
 
-IDEAS = {  # name -> (strategy, parameters, explanation in plain words)
+def _vix(level_op: str, level: float) -> Condition:
+    """Condition on the VIX, the index of expected volatility ("fear") of the US market."""
+    vix = load_factor("VIX (paura del mercato)")
+    return Condition(Indicator("price", source=vix, label="VIX"), level_op, level)
+
+
+# name -> (strategy, parameters or a function that builds them, explanation in plain words).
+# The VIX ideas build their parameters only when chosen, so its prices are downloaded only then.
+# Words a headline must contain to be about the asset (Yahoo headlines are in English).
+NEWS_TERMS = {
+    "SPY": ["S&P 500", "S&P", "Wall Street"],
+    "QQQ": ["Nasdaq"],
+    "FTSEMIB.MI": ["Italy", "Italian", "FTSE MIB", "Milan"],
+    "AAPL": ["Apple"],
+    "TSLA": ["Tesla"],
+    "RACE.MI": ["Ferrari"],
+    "ENI.MI": ["Eni"],
+    "ISP.MI": ["Intesa"],
+    "BTC-USD": ["Bitcoin"],
+    "GC=F": ["gold"],
+}
+
+IDEAS = {
     "Segui la tendenza": (
         rule_strategy,
         {"entry": Condition(Indicator("price"), ">", Indicator("sma", 200)), "exit": None},
@@ -49,6 +71,18 @@ IDEAS = {  # name -> (strategy, parameters, explanation in plain words)
         momentum,
         {},
         "Resto investito se nell'ultimo anno il prezzo è salito (senza contare l'ultimo mese), altrimenti no.",
+    ),
+    "Esci quando il mercato ha paura": (
+        rule_strategy,
+        lambda: {"entry": _vix("<", 25.0), "exit": None},
+        "Resto investito finché il VIX, l'indice della paura del mercato americano, è sotto 25. "
+        "Quando sale sopra, cioè quando c'è agitazione, tengo i soldi da parte.",
+    ),
+    "Compra quando il mercato ha paura": (
+        rule_strategy,
+        lambda: {"entry": _vix(">", 30.0), "exit": _vix("<", 20.0)},
+        "Compro quando il VIX supera 30 (panico: i prezzi sono spesso scesi molto) e rivendo quando "
+        "torna sotto 20, cioè quando la calma è tornata.",
     ),
 }
 
@@ -84,6 +118,12 @@ def render() -> None:
         st.session_state.simple_started = True
     if not st.session_state.get("simple_started"):
         st.caption("Scegli e premi Verifica. La risposta arriva in pochi secondi.")
+        return
+
+    try:
+        params = params() if callable(params) else params
+    except Exception as exc:  # the VIX could not be downloaded
+        st.error(f"Non riesco a scaricare i dati che servono a questa idea. ({exc})")
         return
 
     today = date.today()
@@ -147,3 +187,6 @@ def render() -> None:
         "di slippage a ogni operazione; quando l'idea è fuori dal mercato i soldi rendono il 2% l'anno. "
         "Per cambiare i parametri, scrivere regole tue e vedere tutte le statistiche, passa alla vista Approfondita."
     )
+
+    terms = NEWS_TERMS.get(ticker)
+    show_news(terms[0] if terms else ticker, terms)
