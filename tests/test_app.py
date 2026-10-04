@@ -1,5 +1,6 @@
 """Smoke tests for the Streamlit app: it runs end to end on fake prices (no internet)."""
 
+import html
 from pathlib import Path
 
 import numpy as np
@@ -68,7 +69,7 @@ def test_app_custom_rule_gives_a_verdict(fake_prices):
     at.sidebar.button[0].click().run()
     assert not at.exception
     assert at.table
-    assert any("Prezzo > Media mobile 100g" in m.value for m in at.markdown)
+    assert any("Prezzo > Media mobile 100g" in html.unescape(m.value) for m in at.markdown)
 
 
 def test_app_custom_rule_against_a_number(fake_prices):
@@ -78,7 +79,7 @@ def test_app_custom_rule_against_a_number(fake_prices):
     at.radio(key="entry-kind").set_value("un numero").run()
     at.sidebar.button[0].click().run()
     assert not at.exception
-    assert any("Rendimento 20g > 0" in m.value for m in at.markdown)
+    assert any("Rendimento 20g > 0" in html.unescape(m.value) for m in at.markdown)
 
 
 def test_app_custom_rule_with_two_conditions(fake_prices):
@@ -87,7 +88,7 @@ def test_app_custom_rule_with_two_conditions(fake_prices):
     at.toggle(key="entry_and").set_value(True).run()
     at.sidebar.button[0].click().run()
     assert not at.exception
-    assert any("Prezzo > Media mobile 100g E z-score (distanza dalla media) 10g < -1" in m.value
+    assert any("Prezzo > Media mobile 100g E z-score (distanza dalla media) 10g < -1" in html.unescape(m.value)
                for m in at.markdown)
 
 
@@ -109,3 +110,10 @@ def test_app_cash_rate_changes_the_result(fake_prices):
     at.number_input(key="cash_rate").set_value(5.0).run()
     assert not at.exception
     assert at.table[0].value.loc["Guadagno totale"].iloc[0] != zero
+
+
+def test_app_shows_no_emoji(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.sidebar.button[0].click().run()
+    text = " ".join(m.value for m in at.markdown)
+    assert not any(ch in text for ch in "✅❌⚖")

@@ -1,0 +1,23 @@
+# Look of the app: a sober research tool, not the default Streamlit template.
+
+[theme]
+base = "light"
+primaryColor = "#1f4e79"            # ink blue: buttons, sliders, focus
+backgroundColor = "#f6f7f5"
+secondaryBackgroundColor = "#eceeea" # sidebar and input fields
+textColor = "#1b232c"
+borderColor = "#d5d9d3"
+showWidgetBorder = true
+baseRadius = "small"
+font = "'IBM Plex Sans':https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap, sans-serif"
+headingFont = "'IBM Plex Serif':https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600&display=swap, serif"
+codeFont = "'IBM Plex Mono':https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap, monospace"
+headingFontSizes = ["2.1rem", "1.35rem", "1.1rem"]
+baseFontSize = 15
+
+[theme.sidebar]
+backgroundColor = "#eceeea"
+secondaryBackgroundColor = "#f6f7f5"
+
+[client]
+toolbarMode = "viewer"  # hides the developer "Deploy" button for visitors

@@ -6,6 +6,7 @@ This file is only the user interface. Every number comes from the quantlab libra
 (the same tested functions used in the notebooks), never from code written here.
 """
 
+import html
 from datetime import date
 from pathlib import Path
 
@@ -130,12 +131,33 @@ def get_prices(ticker: str, start: str, end: str) -> pd.Series:
     return data.load_prices([ticker], start, end, cache_dir=DATA_DIR)[ticker].dropna()
 
 
-st.set_page_config(page_title="Quantlab", page_icon="📈", layout="wide")
-st.title("Quantlab: la strategia regge davvero?")
+st.set_page_config(page_title="Quantlab", layout="wide")
+
+# Small additions on top of .streamlit/config.toml: the verdict block and table numbers.
+st.markdown(
+    """
+    <style>
+    .ql-verdict { background:#ffffff; border:1px solid #d5d9d3; border-radius:4px; padding:18px 20px;
+                  display:grid; gap:6px; margin-bottom:8px; }
+    .ql-tag { font:500 0.72rem 'IBM Plex Mono', monospace; letter-spacing:0.08em; text-transform:uppercase; }
+    .ql-good .ql-tag { color:#2e6b4a; } .ql-bad .ql-tag { color:#9b2f2f; } .ql-neutral .ql-tag { color:#8a6a1c; }
+    .ql-title { font:600 1.45rem 'IBM Plex Serif', serif; line-height:1.2; color:#1b232c; }
+    .ql-text { color:#4a535c; }
+    .ql-facts { display:flex; flex-wrap:wrap; gap:8px 32px; margin:10px 0 0; padding-top:12px;
+                border-top:1px solid #e3e6e1; }
+    .ql-facts div { min-width:0; }
+    .ql-facts dt { font-size:0.75rem; color:#6b736c; }
+    .ql-facts dd { margin:0; font:500 0.95rem 'IBM Plex Mono', monospace; overflow-wrap:anywhere; color:#1b232c; }
+    [data-testid="stTable"] td { font-family:'IBM Plex Mono', monospace; font-variant-numeric:tabular-nums; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+st.title("Quantlab")
 st.caption(
-    "Scegli una regola di trading e un titolo. Quantlab la simula sul passato, costi inclusi, "
-    "e la confronta con il semplice *compra e tieni*. Non è un consiglio di investimento: "
-    "dice solo se una regola **avrebbe** funzionato."
+    "Scegli una regola di trading e un titolo. Quantlab la simula sul passato con costi reali "
+    "e la confronta con il semplice compra e tieni. Non è un consiglio di investimento: "
+    "dice solo se una regola avrebbe funzionato."
 )
 
 # ---- Inputs (sidebar) ----
@@ -151,7 +173,7 @@ with st.sidebar:
     if mode == "Strategia pronta":
         name = st.selectbox("Strategia", list(STRATEGY_UI))
         ui = STRATEGY_UI[name]
-        st.info(ui["rule"])
+        st.caption(ui["rule"])
         strategy_func = ui["func"]
 
         st.header("2. Parametri")
@@ -241,23 +263,32 @@ except ValueError as exc:  # e.g. fast average longer than the slow one
 # ---- Verdict ----
 low, high = report.sharpe_diff_ci
 if low > 0:
-    st.success("### ✅ Batte il compra e tieni\nAnche considerando la fortuna, il vantaggio regge.")
+    tone, tag, title, text = ("good", "Batte il benchmark", "Batte il compra e tieni",
+                              "Anche tenendo conto della fortuna, il vantaggio regge.")
 elif high < 0:
-    st.error("### ❌ Peggio del compra e tieni\nAnche considerando la fortuna, lo svantaggio è netto.")
+    tone, tag, title, text = ("bad", "Sotto il benchmark", "Peggio del compra e tieni",
+                              "Anche tenendo conto della fortuna, lo svantaggio è netto.")
 else:
-    st.warning(
-        "### ⚖️ Nessuna prova che batta il compra e tieni\n"
-        "La differenza è compatibile con la fortuna."
-    )
+    tone, tag, title, text = ("neutral", "Nessuna prova", "Nessuna prova che batta il compra e tieni",
+                              "La differenza è compatibile con la fortuna.")
 if strategy_func is rule_strategy:
     used = describe(entry) + (f"; uscita: {describe(exit_rule)}" if exit_rule else "")
 else:
-    used = report.params
-st.write(
-    f"Parametri usati: `{used}` · periodo di prova (out-of-sample) dal "
-    f"**{report.split.date()}**. Differenza di Sharpe {report.sharpe_diff:+.2f}, "
-    f"intervallo al 95% da {low:+.2f} a {high:+.2f}. "
-    f"La strategia è avanti nel {report.share_beating:.0%} dei campioni bootstrap."
+    # e.g. {"window": 50} -> "Finestra N (giorni) 50", using the same labels as the sliders
+    used = ", ".join(f"{ui['params'][k][0]} {v}" for k, v in report.params.items()) or "nessun parametro"
+facts = {
+    "Regola": str(used),
+    "Periodo di prova dal": str(report.split.date()),
+    "Differenza di Sharpe": f"{report.sharpe_diff:+.2f}",
+    "Intervallo al 95%": f"{low:+.2f} … {high:+.2f}",
+    "Strategia avanti in": f"{report.share_beating:.0%} dei campioni",
+}
+facts_html = "".join(f"<div><dt>{k}</dt><dd>{html.escape(v)}</dd></div>" for k, v in facts.items())
+st.markdown(
+    f'<div class="ql-verdict ql-{tone}"><div class="ql-tag">Verdetto · {tag}</div>'
+    f'<div class="ql-title">{title}</div><div class="ql-text">{text}</div>'
+    f'<dl class="ql-facts">{facts_html}</dl></div>',
+    unsafe_allow_html=True,
 )
 
 # Data snooping: every new idea tested on the same data is another lottery ticket.
@@ -298,7 +329,11 @@ def pretty(table: pd.DataFrame) -> pd.DataFrame:
     return shown
 
 
-COLORS = {"strategy": "#3b82f6", "buy_and_hold": "#f08a24"}  # same colours as notebook 02
+COLORS = {"strategy": "#1f4e79", "buy_and_hold": "#b5762a"}  # ink blue vs ochre
+# Vega-Lite expression: the year on January ticks, an Italian month abbreviation otherwise.
+MONTHS_IT = ("month(datum.value) == 0 ? year(datum.value) + '' : "
+             "['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'][month(datum.value)]")
+TIME_AXIS = alt.X("date:T", title=None, axis=alt.Axis(labelExpr=MONTHS_IT))
 
 
 def comparison_chart(table: pd.DataFrame, y_title: str, y_format: str) -> alt.Chart:
@@ -309,7 +344,7 @@ def comparison_chart(table: pd.DataFrame, y_title: str, y_format: str) -> alt.Ch
         alt.Chart(long)
         .mark_line(strokeWidth=1.8)
         .encode(
-            x=alt.X("date:T", title=None),
+            x=TIME_AXIS,
             y=alt.Y("value:Q", title=y_title, axis=alt.Axis(format=y_format), scale=alt.Scale(zero=False)),
             color=alt.Color("series:N", title=None, legend=alt.Legend(orient="top"),
                             scale=alt.Scale(domain=[labels[k] for k in COLORS], range=list(COLORS.values()))),
@@ -354,8 +389,8 @@ st.caption(
 )
 price_line = (
     alt.Chart(oos_prices.rename("price").rename_axis("date").reset_index())
-    .mark_line(color="#8a8f98", strokeWidth=1.5)
-    .encode(x=alt.X("date:T", title=None), y=alt.Y("price:Q", title="Prezzo", scale=alt.Scale(zero=False)))
+    .mark_line(color="#7d847c", strokeWidth=1.3)
+    .encode(x=TIME_AXIS, y=alt.Y("price:Q", title="Prezzo", scale=alt.Scale(zero=False)))
 )
 trade_points = (
     alt.Chart(trades.rename_axis("date").reset_index())
@@ -364,7 +399,7 @@ trade_points = (
         x="date:T",
         y="price:Q",
         color=alt.Color("action:N", title=None,
-                        scale=alt.Scale(domain=["buy", "sell"], range=["#1a9850", "#d73027"]),
+                        scale=alt.Scale(domain=["buy", "sell"], range=["#2e6b4a", "#9b2f2f"]),
                         legend=alt.Legend(labelExpr="datum.label == 'buy' ? 'Compra' : 'Vende'")),
         shape=alt.Shape("action:N", scale=alt.Scale(domain=["buy", "sell"], range=["triangle-up", "triangle-down"]),
                         legend=None),
