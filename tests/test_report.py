@@ -119,3 +119,10 @@ def test_crypto_prices_are_annualised_with_365_days():
 
 def test_stocks_keep_252_days():
     assert evaluate_strategy(_random_walk(), buy_and_hold, n_bootstrap=50).periods_per_year == 252
+
+
+def test_report_keeps_the_bootstrap_samples():
+    report = evaluate_strategy(_random_walk(), momentum, params={"lookback": 60, "skip": 5}, n_bootstrap=80)
+    assert len(report.sharpe_diff_samples) == 80
+    low, high = report.sharpe_diff_ci
+    assert np.nanmin(report.sharpe_diff_samples) <= low <= high <= np.nanmax(report.sharpe_diff_samples)

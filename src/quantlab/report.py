@@ -39,6 +39,7 @@ class StrategyReport:
     walk_forward_folds: pd.DataFrame | None = None
     cash_rate: float = 0.0  # annual interest on idle cash, also subtracted in every Sharpe
     periods_per_year: int = 252  # 252 trading days, or 365 for assets trading every day (crypto)
+    sharpe_diff_samples: np.ndarray | None = None  # every bootstrap sample, to plot their distribution
     verdict: str = ""
     warnings: list[str] = field(default_factory=list)
 
@@ -153,6 +154,7 @@ def evaluate_strategy(
         slippage=slippage,
         cash_rate=cash_rate,
         periods_per_year=ppy,
+        sharpe_diff_samples=samples,
         returns=returns,
         in_sample=in_sample,
         out_of_sample=out_of_sample,

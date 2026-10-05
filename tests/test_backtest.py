@@ -8,6 +8,8 @@ import pandas.testing as pdt
 import pytest
 
 from quantlab.backtest import (
+    round_trips,
+    trade_stats,
     current_signal,
     trade_log,
     DEFAULT_COMMISSION,
@@ -185,3 +187,37 @@ def test_current_signal_without_changes_starts_at_the_beginning():
 def test_current_signal_of_empty_series_is_an_error():
     with pytest.raises(ValueError):
         current_signal(pd.Series([], dtype=float))
+
+
+def test_round_trips_pair_buys_with_sells_and_close_the_open_one():
+    idx = pd.bdate_range("2024-01-01", periods=8)
+    prices = pd.Series([10.0, 11, 12, 11, 10, 10, 12, 13], index=idx)
+    signals = pd.Series([1.0, 1, 0, 0, 1, 1, 1, 1], index=idx)
+    trips = round_trips(prices, run_backtest(prices, signals)["position"], cost_per_trade=0.0)
+    assert trips[["entry_price", "exit_price", "open"]].values.tolist() == [[10.0, 12.0, False], [10.0, 13.0, True]]
+    assert trips["net_return"].tolist() == pytest.approx([0.2, 0.3])
+    assert trips["days"].tolist() == [(idx[2] - idx[0]).days, (idx[7] - idx[4]).days]
+
+
+def test_round_trips_subtract_the_cost_of_both_legs():
+    idx = pd.bdate_range("2024-01-01", periods=4)
+    prices = pd.Series([10.0, 11, 12, 13], index=idx)
+    trips = round_trips(prices, run_backtest(prices, pd.Series([1.0, 0, 0, 0], index=idx))["position"],
+                        cost_per_trade=0.001)
+    assert trips["net_return"].iloc[0] == pytest.approx(11 / 10 - 1 - 0.002)
+
+
+def test_round_trips_reject_short_positions():
+    idx = pd.bdate_range("2024-01-01", periods=3)
+    with pytest.raises(ValueError):
+        round_trips(pd.Series(10.0, index=idx), pd.Series([0.0, -1, -1], index=idx))
+
+
+def test_trade_stats():
+    trips = pd.DataFrame({"net_return": [0.10, -0.05, 0.20, -0.05], "days": [10, 20, 30, 40]})
+    stats = trade_stats(trips)
+    assert stats["trades"] == 4 and stats["win_rate"] == 0.5
+    assert stats["avg_win"] == pytest.approx(0.15) and stats["avg_loss"] == pytest.approx(-0.05)
+    assert stats["profit_factor"] == pytest.approx(0.30 / 0.10)
+    assert stats["avg_days"] == 25
+    assert trade_stats(trips.iloc[0:0])["trades"] == 0

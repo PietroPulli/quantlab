@@ -106,3 +106,47 @@ def current_signal(signals: pd.Series) -> tuple[pd.Timestamp, float, pd.Timestam
     different = (signals != last).to_numpy().nonzero()[0]  # positions where the value differs
     since = signals.index[different[-1] + 1] if len(different) else signals.index[0]
     return signals.index[-1], float(last), since
+
+
+def round_trips(prices: pd.Series, positions: pd.Series,
+                cost_per_trade: float = DEFAULT_COMMISSION + DEFAULT_SLIPPAGE) -> pd.DataFrame:
+    """Every complete long trade (buy, then sell) of a long/flat strategy.
+
+    Dates and prices are those of trade_log (the close where each signal changed). `net_return`
+    subtracts the cost of both legs. A trade still open at the end is closed at the last price
+    and marked `open`.
+    """
+    if not positions.isin([0.0, 1.0]).all():
+        raise ValueError("round_trips needs long/flat positions (0 or 1)")
+    log = trade_log(prices, positions)
+    rows, entry = [], None
+    for day, trade in log.iterrows():
+        if trade["action"] == "buy":
+            entry = (day, trade["price"])
+        elif entry is not None:
+            rows.append((*entry, day, trade["price"], False))
+            entry = None
+    if entry is not None:  # bought and never sold: value it at the last price
+        rows.append((*entry, prices.index[-1], prices.iloc[-1], True))
+    trips = pd.DataFrame(rows, columns=["entry_date", "entry_price", "exit_date", "exit_price", "open"])
+    trips["net_return"] = trips["exit_price"] / trips["entry_price"] - 1 - 2 * cost_per_trade
+    trips["days"] = (trips["exit_date"] - trips["entry_date"]).dt.days
+    return trips
+
+
+def trade_stats(trips: pd.DataFrame) -> dict:
+    """Summary of round trips: count, % winners, average win/loss, profit factor, holding days."""
+    if trips.empty:
+        return {"trades": 0, "win_rate": np.nan, "avg_win": np.nan, "avg_loss": np.nan,
+                "profit_factor": np.nan, "avg_days": np.nan}
+    r = trips["net_return"]
+    wins, losses = r[r > 0], r[r <= 0]
+    return {
+        "trades": len(r),
+        "win_rate": len(wins) / len(r),
+        "avg_win": wins.mean() if len(wins) else np.nan,
+        "avg_loss": losses.mean() if len(losses) else np.nan,
+        # money made by winners per unit lost by losers (> 1 means winners outweigh losers)
+        "profit_factor": wins.sum() / -losses.sum() if losses.sum() < 0 else np.nan,
+        "avg_days": trips["days"].mean(),
+    }
