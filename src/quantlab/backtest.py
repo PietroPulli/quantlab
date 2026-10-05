@@ -129,6 +129,9 @@ def round_trips(prices: pd.Series, positions: pd.Series,
     if entry is not None:  # bought and never sold: value it at the last price
         rows.append((*entry, prices.index[-1], prices.iloc[-1], True))
     trips = pd.DataFrame(rows, columns=["entry_date", "entry_price", "exit_date", "exit_price", "open"])
+    # With no trades the columns would be untyped: force dates to be dates so .dt still works.
+    trips = trips.astype({"entry_date": "datetime64[ns]", "exit_date": "datetime64[ns]",
+                          "entry_price": float, "exit_price": float, "open": bool})
     trips["net_return"] = trips["exit_price"] / trips["entry_price"] - 1 - 2 * cost_per_trade
     trips["days"] = (trips["exit_date"] - trips["entry_date"]).dt.days
     return trips
