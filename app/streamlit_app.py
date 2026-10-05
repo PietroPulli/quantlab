@@ -13,7 +13,11 @@ from pathlib import Path
 
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # so the views can `import common`
+APP_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(APP_DIR))  # so the views can `import common`
+# Use the library straight from this repository's src/ folder. A hosting service may keep an
+# old installed copy of quantlab after a git push; this way the app and the library always match.
+sys.path.insert(0, str(APP_DIR.parent / "src"))
 
 import advanced  # noqa: E402
 import simple  # noqa: E402

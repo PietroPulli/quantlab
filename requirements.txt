@@ -1,3 +1,4 @@
-# Used by Streamlit Community Cloud: install quantlab itself (from pyproject.toml) plus the app UI.
-.
+# Used by Streamlit Community Cloud: quantlab itself (editable: it follows the repository
+# files instead of keeping a copy) plus the app UI.
+-e .
 streamlit>=1.38
