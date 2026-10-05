@@ -15,6 +15,7 @@ from common import (
     TIME_AXIS,
     comparison_chart,
     describe,
+    factor_note,
     get_prices,
     load_factor,
     show_news,
@@ -47,11 +48,18 @@ ROW_NAMES = {
 ASSET = "il titolo scelto"
 
 
-def indicator_input(label: str, key: str, default: Indicator) -> Indicator:
+def indicator_input(label: str, key: str, default: Indicator, ticker: str) -> Indicator:
     """Widgets (on what, which indicator, how many days) -> an Indicator."""
     on = st.selectbox(f"{label}: calcolato su", [ASSET, *FACTORS], key=f"{key}-source",
-                      help="Il titolo stesso, oppure un fattore che muove tutto il mercato.")
-    source, short = (None, "") if on == ASSET else (load_factor(on), FACTORS[on][1])
+                      help="Il titolo stesso, oppure un fattore che muove il mercato.")
+    source, short = None, ""
+    if on != ASSET:
+        st.caption(factor_note(on))
+        try:
+            source, short = load_factor(on, ticker), FACTORS[on][2]
+        except Exception as exc:  # e.g. earnings asked for an ETF, or no network
+            st.error(f"Non riesco a usare «{on}» per {ticker}: {exc}")
+            st.stop()
     names = list(INDICATOR_LABELS)
     name = st.selectbox("Indicatore", names, index=names.index(default.name), key=f"{key}-name",
                         format_func=lambda n: "Valore" if (n == "price" and source is not None) else INDICATOR_LABELS[n])
@@ -62,13 +70,13 @@ def indicator_input(label: str, key: str, default: Indicator) -> Indicator:
     return Indicator(name, int(window), source=source, label=short)
 
 
-def condition_input(key: str, left: Indicator, op: str, right: Indicator | float) -> Condition:
+def condition_input(key: str, left: Indicator, op: str, right: Indicator | float, ticker: str) -> Condition:
     """Widgets for one condition: <indicator> <operator> <indicator or number>.
 
     `left`, `op` and `right` are only the starting values shown to the user.
     """
     right_is_number = not isinstance(right, Indicator)
-    left_ind = indicator_input("Se", f"{key}-left", left)
+    left_ind = indicator_input("Se", f"{key}-left", left, ticker)
     op = st.selectbox("è", list(OPERATOR_LABELS), index=list(OPERATOR_LABELS).index(op),
                       format_func=OPERATOR_LABELS.get, key=f"{key}-op")
     kinds = ["un indicatore", "un numero"]
@@ -80,7 +88,7 @@ def condition_input(key: str, left: Indicator, op: str, right: Indicator | float
         )
     else:
         default = Indicator("sma", 50) if right_is_number else right
-        right_value = indicator_input("Confronta con", f"{key}-right", default)
+        right_value = indicator_input("Confronta con", f"{key}-right", default, ticker)
     return Condition(left_ind, op, right_value)
 
 
@@ -117,18 +125,18 @@ def render() -> None:
         else:
             st.header("2. La tua regola")
             st.markdown("**Compra quando...**")
-            entry = condition_input("entry", Indicator("price"), ">", Indicator("sma", 100))
+            entry = condition_input("entry", Indicator("price"), ">", Indicator("sma", 100), ticker)
             if st.toggle("Aggiungi una condizione (E)", key="entry_and",
                          help="Compra solo nei giorni in cui sono vere entrambe le condizioni."):
                 st.markdown("**...e anche quando...**")
-                entry = [entry, condition_input("entry2", Indicator("zscore", 10), "<", -1.0)]
+                entry = [entry, condition_input("entry2", Indicator("zscore", 10), "<", -1.0, ticker)]
             st.caption(f"Entrata: {describe(entry)}")
             exit_rule = None
             if st.toggle("Aggiungi una regola di uscita", key="has_exit",
                          help="Senza uscita sei investito solo nei giorni in cui la regola di entrata è vera. "
                          "Con un'uscita, una volta entrato resti dentro finché non scatta l'uscita."):
                 st.markdown("**Vendi quando...**")
-                exit_rule = condition_input("exit", Indicator("price"), "<", Indicator("sma", 50))
+                exit_rule = condition_input("exit", Indicator("price"), "<", Indicator("sma", 50), ticker)
                 st.caption(f"Uscita: {describe(exit_rule)}")
             strategy_func, grid = rule_strategy, None
             params = {"entry": entry, "exit": exit_rule}

@@ -11,6 +11,8 @@ pytest.importorskip("streamlit")
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
 import quantlab.data  # noqa: E402
+import quantlab.earnings  # noqa: E402
+import quantlab.macro  # noqa: E402
 
 APP = str(Path(__file__).resolve().parents[1] / "app" / "streamlit_app.py")
 
@@ -35,6 +37,11 @@ def fake_prices(monkeypatch):
     fake_news = [{"title": "Notizia di prova su Apple e S&P 500", "publisher": "Test", "link": "https://example.com",
                   "published": pd.Timestamp("2026-01-01 10:00", tz="UTC")}]
     monkeypatch.setattr(quantlab.data, "latest_news", lambda query, count=5: fake_news)
+    # macro data and earnings surprises: a calm, positive world (curve > 0, beats > 0)
+    idx = pd.bdate_range("2014-01-01", periods=3000)
+    monkeypatch.setattr(quantlab.macro, "load_macro", lambda name, cache_dir=None: pd.Series(1.5, index=idx))
+    monkeypatch.setattr(quantlab.earnings, "load_earnings_surprises",
+                        lambda ticker, cache_dir=None: pd.Series(4.0, index=idx[::63]))
 
 
 def test_app_waits_for_the_button(fake_prices):
@@ -148,7 +155,9 @@ def test_simple_view_is_the_default_and_answers_in_euros(fake_prices):
 
 @pytest.mark.parametrize("idea", ["Segui la tendenza", "Compra quando sfonda verso l'alto",
                                   "Compra dopo un forte calo", "Compra ciò che è salito nell'ultimo anno",
-                                  "Esci quando il mercato ha paura", "Compra quando il mercato ha paura"])
+                                  "Esci quando il mercato ha paura", "Compra quando il mercato ha paura",
+                                  "Esci quando la curva dei tassi si inverte",
+                                  "Compra dopo trimestrali sopra le attese"])
 def test_simple_view_works_for_every_idea(fake_prices, idea):
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.selectbox(key="simple_idea").set_value(idea).run()
@@ -184,3 +193,31 @@ def test_advanced_rule_on_a_market_factor(fake_prices):
     at.sidebar.button[0].click().run()
     assert not at.exception
     assert any("VIX < 120" in html.unescape(m.value) for m in at.markdown)
+
+
+@pytest.mark.parametrize("factor, label", [("Inflazione USA (% annuo)", "Inflazione"),
+                                           ("Sorpresa dell'ultima trimestrale (%)", "Sorpresa utili")])
+def test_advanced_rule_on_macro_and_earnings(fake_prices, factor, label):
+    at = _advanced()
+    at.radio(key="mode").set_value("Crea la tua regola").run()
+    at.selectbox(key="entry-left-source").set_value(factor).run()
+    assert any("giorni dopo" in c.value or "dopo l'annuncio" in c.value for c in at.caption)
+    at.selectbox(key="entry-left-name").set_value("price").run()
+    at.radio(key="entry-kind").set_value("un numero").run()
+    at.sidebar.button[0].click().run()
+    assert not at.exception
+    assert any(f"{label} > 0" in html.unescape(m.value) for m in at.markdown)
+
+
+def test_simple_view_explains_when_an_idea_does_not_apply(fake_prices, monkeypatch):
+    def no_earnings(ticker, cache_dir=None):
+        raise ValueError("No earnings history for SPY")
+
+    monkeypatch.setattr(quantlab.earnings, "load_earnings_surprises", no_earnings)
+    import streamlit as st
+    st.cache_data.clear()  # forget the (fake) earnings cached by earlier tests
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.selectbox(key="simple_idea").set_value("Compra dopo trimestrali sopra le attese").run()
+    at.button(key="simple_run").click().run()
+    assert not at.exception
+    assert any("non si può applicare" in e.value for e in at.error)

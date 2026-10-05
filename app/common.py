@@ -7,7 +7,8 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from quantlab import data
+from quantlab import data, earnings, macro
+from quantlab.macro import MACRO
 from quantlab.report import StrategyReport
 from quantlab.rules import Condition, Indicator
 from quantlab.strategies import breakout, mean_reversion, momentum, moving_average_crossover
@@ -82,15 +83,35 @@ INDICATOR_LABELS = {
     "high": "Massimo degli ultimi N giorni",
     "low": "Minimo degli ultimi N giorni",
 }
-# Market-wide factors with a daily history, usable inside rules: name -> (Yahoo ticker, short label)
+# Factors usable inside rules: name -> (kind, key, short label).
+#   yahoo:    daily market data, key = Yahoo ticker
+#   macro:    FRED series made point-in-time, key = name in quantlab.macro.MACRO
+#   earnings: the chosen company's own quarterly surprises
 FACTORS = {
-    "VIX (paura del mercato)": ("^VIX", "VIX"),
-    "Tasso USA a 10 anni (%)": ("^TNX", "Tasso 10 anni"),
-    "Tasso USA a 3 mesi (%)": ("^IRX", "Tasso 3 mesi"),
-    "Dollaro (indice DXY)": ("DX-Y.NYB", "Dollaro"),
-    "Petrolio WTI": ("CL=F", "Petrolio"),
-    "Oro": ("GC=F", "Oro"),
+    "VIX (paura del mercato)": ("yahoo", "^VIX", "VIX"),
+    "Tasso USA a 10 anni (%)": ("yahoo", "^TNX", "Tasso 10 anni"),
+    "Tasso USA a 3 mesi (%)": ("yahoo", "^IRX", "Tasso 3 mesi"),
+    "Dollaro (indice DXY)": ("yahoo", "DX-Y.NYB", "Dollaro"),
+    "Petrolio WTI": ("yahoo", "CL=F", "Petrolio"),
+    "Oro": ("yahoo", "GC=F", "Oro"),
+    "Inflazione USA (% annuo)": ("macro", "inflation", "Inflazione"),
+    "Disoccupazione USA (%)": ("macro", "unemployment", "Disoccupazione"),
+    "Tassi della Fed (%)": ("macro", "fed_funds", "Tassi Fed"),
+    "Curva dei tassi 10 anni - 2 anni (%)": ("macro", "yield_curve", "Curva tassi"),
+    "Sorpresa dell'ultima trimestrale (%)": ("earnings", None, "Sorpresa utili"),
 }
+
+
+def factor_note(name: str) -> str:
+    """One line on how a factor is kept honest (when its values become usable)."""
+    kind, key, _ = FACTORS[name]
+    if kind == "macro":
+        return (f"Dato pubblicato in ritardo: nel test ogni valore diventa visibile solo "
+                f"{MACRO[key].lag_days} giorni dopo la data a cui si riferisce, come nella realtà.")
+    if kind == "earnings":
+        return ("Utile annunciato contro le attese degli analisti. Usato solo dalla prima chiusura dopo "
+                "l'annuncio. Esiste solo per singole aziende, non per ETF, indici o crypto.")
+    return "Dato di mercato giornaliero: usato dal giorno stesso della chiusura."
 OPERATOR_LABELS = {">": "sopra (>)", "<": "sotto (<)", ">=": "sopra o uguale (≥)", "<=": "sotto o uguale (≤)"}
 
 COLORS = {"strategy": "#1f4e79", "buy_and_hold": "#b5762a"}  # ink blue vs ochre
@@ -109,9 +130,18 @@ def get_prices(ticker: str, start: str, end: str) -> pd.Series:
     return data.load_prices([ticker], start, end, cache_dir=DATA_DIR)[ticker].dropna()
 
 
-def load_factor(name: str) -> pd.Series:
-    """Full daily history of a factor up to today (rules only ever read past values of it)."""
-    return get_prices(FACTORS[name][0], "2000-01-01", str(date.today()))
+@st.cache_data(show_spinner="Scarico i dati...")
+def load_factor(name: str, ticker: str = "") -> pd.Series:
+    """Full history of a factor up to today (rules only ever read its past values).
+
+    `ticker` is needed only by the earnings factor, which belongs to one company.
+    """
+    kind, key, _ = FACTORS[name]
+    if kind == "macro":
+        return macro.load_macro(key, DATA_DIR)
+    if kind == "earnings":
+        return earnings.load_earnings_surprises(ticker, DATA_DIR)
+    return get_prices(key, "2000-01-01", str(date.today()))
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
