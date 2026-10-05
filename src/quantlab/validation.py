@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from quantlab.backtest import DEFAULT_COMMISSION, DEFAULT_SLIPPAGE, run_backtest
-from quantlab.metrics import sharpe_ratio
+from quantlab.metrics import TRADING_DAYS, sharpe_ratio
 
 Strategy = Callable[..., pd.Series]
 
@@ -42,10 +42,11 @@ def strategy_returns(
     commission: float = DEFAULT_COMMISSION,
     slippage: float = DEFAULT_SLIPPAGE,
     cash_rate: float = 0.0,
+    periods_per_year: int = TRADING_DAYS,
 ) -> pd.Series:
     """Net daily returns of `strategy(prices, **params)` after costs (idle cash earns `cash_rate`)."""
     signals = strategy(prices, **params)
-    return run_backtest(prices, signals, commission, slippage, cash_rate)["net_return"]
+    return run_backtest(prices, signals, commission, slippage, cash_rate, periods_per_year)["net_return"]
 
 
 def optimize(
@@ -57,6 +58,7 @@ def optimize(
     commission: float = DEFAULT_COMMISSION,
     slippage: float = DEFAULT_SLIPPAGE,
     cash_rate: float = 0.0,
+    periods_per_year: int = TRADING_DAYS,
 ) -> tuple[dict, pd.DataFrame]:
     """Pick the params with the best Sharpe on the dates [start, end) only.
 
@@ -66,9 +68,9 @@ def optimize(
     history = prices[prices.index < end] if end is not None else prices
     rows = []
     for params in grid:
-        net = strategy_returns(history, strategy, params, commission, slippage, cash_rate)
+        net = strategy_returns(history, strategy, params, commission, slippage, cash_rate, periods_per_year)
         window = net[net.index >= start] if start is not None else net
-        rows.append({**params, "sharpe": sharpe_ratio(window, risk_free=cash_rate)})
+        rows.append({**params, "sharpe": sharpe_ratio(window, cash_rate, periods_per_year)})
     scores = pd.DataFrame(rows)
     # NaN Sharpe (strategy never traded) must never win: rank it below everything.
     best = int(scores["sharpe"].fillna(-np.inf).to_numpy().argmax())
@@ -84,6 +86,7 @@ def walk_forward(
     commission: float = DEFAULT_COMMISSION,
     slippage: float = DEFAULT_SLIPPAGE,
     cash_rate: float = 0.0,
+    periods_per_year: int = TRADING_DAYS,
 ) -> tuple[pd.Series, pd.DataFrame]:
     """Re-optimise on a rolling training window, then trade the next unseen window.
 
@@ -109,6 +112,7 @@ def walk_forward(
             commission=commission,
             slippage=slippage,
             cash_rate=cash_rate,
+            periods_per_year=periods_per_year,
         )
         # Signals for the test window, computed only from prices up to test_end.
         window_signals = strategy(prices.iloc[:test_end], **best).iloc[test_start:test_end]
@@ -122,7 +126,7 @@ def walk_forward(
             }
         )
 
-    net = run_backtest(prices, signals, commission, slippage, cash_rate)["net_return"]
+    net = run_backtest(prices, signals, commission, slippage, cash_rate, periods_per_year)["net_return"]
     return net.iloc[train_days:], pd.DataFrame(folds)
 
 
@@ -158,12 +162,14 @@ def sharpe_difference_bootstrap(
     block_size: int = 20,
     seed: int = 42,
     risk_free: float = 0.0,
+    periods_per_year: int = TRADING_DAYS,
 ) -> np.ndarray:
     """Bootstrap samples of Sharpe(strategy) - Sharpe(benchmark), resampling days in pairs."""
     paired = pd.DataFrame({"strategy": strategy_net, "benchmark": benchmark_net})
     return block_bootstrap(
         paired,
-        lambda d: sharpe_ratio(d["strategy"], risk_free) - sharpe_ratio(d["benchmark"], risk_free),
+        lambda d: (sharpe_ratio(d["strategy"], risk_free, periods_per_year)
+                   - sharpe_ratio(d["benchmark"], risk_free, periods_per_year)),
         n_samples,
         block_size,
         seed,

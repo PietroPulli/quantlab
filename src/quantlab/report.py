@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from quantlab.backtest import DEFAULT_COMMISSION, DEFAULT_SLIPPAGE, run_backtest
-from quantlab.metrics import compare
+from quantlab.metrics import compare, infer_periods_per_year
 from quantlab.strategies import buy_and_hold
 from quantlab.validation import (
     Strategy,
@@ -38,16 +38,19 @@ class StrategyReport:
     walk_forward: pd.DataFrame | None = None  # metrics table, None if no grid given
     walk_forward_folds: pd.DataFrame | None = None
     cash_rate: float = 0.0  # annual interest on idle cash, also subtracted in every Sharpe
+    periods_per_year: int = 252  # 252 trading days, or 365 for assets trading every day (crypto)
     verdict: str = ""
     warnings: list[str] = field(default_factory=list)
 
 
 def _buy_and_hold_from(
-    prices: pd.Series, start: pd.Timestamp, commission: float, slippage: float, cash_rate: float
+    prices: pd.Series, start: pd.Timestamp, commission: float, slippage: float, cash_rate: float,
+    periods_per_year: int,
 ) -> pd.Series:
     """Buy & hold that only starts investing on `start`, so it pays the same entry cost."""
     signals = (prices.index >= start).astype(float)
-    net = run_backtest(prices, pd.Series(signals, index=prices.index), commission, slippage, cash_rate)
+    net = run_backtest(prices, pd.Series(signals, index=prices.index), commission, slippage, cash_rate,
+                       periods_per_year)
     return net["net_return"][prices.index >= start]
 
 
@@ -76,8 +79,9 @@ def evaluate_strategy(
     n_bootstrap: int = 1000,
     block_size: int = 20,
     seed: int = 42,
-    walk_forward_train: int = 756,
-    walk_forward_test: int = 252,
+    walk_forward_train: int | None = None,
+    walk_forward_test: int | None = None,
+    periods_per_year: int | None = None,
 ) -> StrategyReport:
     """Evaluate a strategy on one asset, net of costs, always next to buy & hold.
 
@@ -86,27 +90,32 @@ def evaluate_strategy(
     """
     if params is not None and grid is not None:
         raise ValueError("give either params or grid, not both")
+    # 252 trading days a year for stocks, 365 for crypto: inferred from the dates unless given.
+    ppy = periods_per_year or infer_periods_per_year(prices.index)
+    walk_forward_train = walk_forward_train or 3 * ppy  # choose on 3 years...
+    walk_forward_test = walk_forward_test or ppy  # ...trade the next one
     split = split_date(prices.index, in_sample_fraction)
     if grid is not None:
         params, _ = optimize(
-            prices, strategy, grid, end=split, commission=commission, slippage=slippage, cash_rate=cash_rate
+            prices, strategy, grid, end=split, commission=commission, slippage=slippage, cash_rate=cash_rate,
+            periods_per_year=ppy,
         )
     params = params or {}
     n_combinations = len(grid) if grid is not None else 1
 
     returns = pd.DataFrame(
         {
-            "strategy": strategy_returns(prices, strategy, params, commission, slippage, cash_rate),
-            "buy_and_hold": strategy_returns(prices, buy_and_hold, {}, commission, slippage, cash_rate),
+            "strategy": strategy_returns(prices, strategy, params, commission, slippage, cash_rate, ppy),
+            "buy_and_hold": strategy_returns(prices, buy_and_hold, {}, commission, slippage, cash_rate, ppy),
         }
     )
     is_mask = returns.index < split
-    in_sample = compare(dict(returns[is_mask].items()), risk_free=cash_rate)
-    out_of_sample = compare(dict(returns[~is_mask].items()), risk_free=cash_rate)
+    in_sample = compare(dict(returns[is_mask].items()), ppy, cash_rate)
+    out_of_sample = compare(dict(returns[~is_mask].items()), ppy, cash_rate)
 
     oos = returns[~is_mask]
     samples = sharpe_difference_bootstrap(
-        oos["strategy"], oos["buy_and_hold"], n_bootstrap, block_size, seed, cash_rate
+        oos["strategy"], oos["buy_and_hold"], n_bootstrap, block_size, seed, cash_rate, ppy
     )
     ci = confidence_interval(samples)
     sharpe_diff = out_of_sample.loc["sharpe", "strategy"] - out_of_sample.loc["sharpe", "buy_and_hold"]
@@ -114,10 +123,10 @@ def evaluate_strategy(
     wf_table, wf_folds = None, None
     if grid is not None and len(prices) >= walk_forward_train + walk_forward_test:
         wf_net, wf_folds = walk_forward(
-            prices, strategy, grid, walk_forward_train, walk_forward_test, commission, slippage, cash_rate
+            prices, strategy, grid, walk_forward_train, walk_forward_test, commission, slippage, cash_rate, ppy
         )
-        bh_net = _buy_and_hold_from(prices, wf_net.index[0], commission, slippage, cash_rate)
-        wf_table = compare({"strategy": wf_net, "buy_and_hold": bh_net}, risk_free=cash_rate)
+        bh_net = _buy_and_hold_from(prices, wf_net.index[0], commission, slippage, cash_rate, ppy)
+        wf_table = compare({"strategy": wf_net, "buy_and_hold": bh_net}, ppy, cash_rate)
 
     warnings = []
     is_sharpe = in_sample.loc["sharpe", "strategy"]
@@ -143,6 +152,7 @@ def evaluate_strategy(
         commission=commission,
         slippage=slippage,
         cash_rate=cash_rate,
+        periods_per_year=ppy,
         returns=returns,
         in_sample=in_sample,
         out_of_sample=out_of_sample,

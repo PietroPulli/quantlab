@@ -7,6 +7,19 @@ TRADING_DAYS = 252  # trading days per year, used to annualise daily figures
 MIN_STD = 1e-12  # below this a std is floating-point noise, not real variability
 
 
+def infer_periods_per_year(index: pd.DatetimeIndex) -> int:
+    """252 for markets closed at weekends (stocks, ETFs), 365 for 7-days-a-week ones (crypto).
+
+    Counted from the dates themselves: more than 300 observations per calendar year means
+    the asset also trades at weekends.
+    """
+    if len(index) < 2:
+        return TRADING_DAYS
+    span_days = (index[-1] - index[0]).days
+    per_year = (len(index) - 1) / span_days * 365.25 if span_days else TRADING_DAYS
+    return 365 if per_year > 300 else TRADING_DAYS
+
+
 def total_return(returns: pd.Series) -> float:
     """Compounded return over the whole period: prod(1 + r) - 1."""
     return float((1 + returns).prod() - 1)

@@ -154,12 +154,12 @@ def render() -> None:
     with st.spinner("Faccio i conti..."):
         report = evaluate_strategy(prices, strategy, params=params, name=idea, cash_rate=CASH_RATE)
         positions = run_backtest(prices, strategy(prices, **params), DEFAULT_COMMISSION, DEFAULT_SLIPPAGE,
-                                 CASH_RATE)["position"]
+                                 CASH_RATE, report.periods_per_year)["position"]
 
     # Only the test period counts: the earlier years are used as history, never judged.
     in_test = report.returns.index >= report.split
     growth = amount * (1 + report.returns[in_test]).cumprod()
-    years = in_test.sum() / 252
+    years = in_test.sum() / report.periods_per_year  # 365 a year for crypto
     trades = trade_log(prices, positions)
     n_trades = int((trades.index >= report.split).sum())
     worst = report.out_of_sample.loc["max_drawdown"]

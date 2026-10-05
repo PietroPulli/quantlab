@@ -24,6 +24,7 @@ def run_backtest(
     commission: float = DEFAULT_COMMISSION,
     slippage: float = DEFAULT_SLIPPAGE,
     cash_rate: float = 0.0,
+    periods_per_year: int = TRADING_DAYS,
 ) -> pd.DataFrame:
     """Backtest one asset. Signals are target exposures in [-1, 1] (1 = fully long).
 
@@ -46,7 +47,7 @@ def run_backtest(
     position = signals_to_positions(signals)
     asset_return = prices.pct_change(fill_method=None).fillna(0.0)
     # Compound annual rate -> daily rate, paid on the idle fraction of capital.
-    daily_cash = (1 + cash_rate) ** (1 / TRADING_DAYS) - 1
+    daily_cash = (1 + cash_rate) ** (1 / periods_per_year) - 1  # 365 periods for crypto
     cash_return = (1 - position.abs()) * daily_cash
     cash_return.iloc[:1] = 0.0  # day 0 is the starting point: no time has passed yet
     gross = position * asset_return + cash_return

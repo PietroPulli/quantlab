@@ -105,3 +105,17 @@ def test_cash_rate_helps_strategies_that_are_often_out_of_the_market():
 def test_report_mentions_the_cash_rate():
     report = evaluate_strategy(_random_walk(), buy_and_hold, cash_rate=0.03, n_bootstrap=50)
     assert "idle cash earns 3.00%" in format_report(report)
+
+
+def test_crypto_prices_are_annualised_with_365_days():
+    # Bitcoin trades every day: one year is 365 prices, not 252.
+    idx = pd.date_range("2018-01-01", periods=4 * 365)
+    prices = pd.Series(100 * 1.0002 ** np.arange(len(idx)), index=idx)
+    report = evaluate_strategy(prices, buy_and_hold, n_bootstrap=50)
+    assert report.periods_per_year == 365
+    expected = 1.0002 ** 365 - 1  # one calendar year of daily +0.02%
+    assert report.out_of_sample.loc["annual_return", "buy_and_hold"] == pytest.approx(expected, rel=1e-6)
+
+
+def test_stocks_keep_252_days():
+    assert evaluate_strategy(_random_walk(), buy_and_hold, n_bootstrap=50).periods_per_year == 252

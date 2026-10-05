@@ -296,13 +296,13 @@ def render() -> None:
 
     # ---- When does it trade? ----
     positions = run_backtest(prices, strategy_func(prices, **report.params), commission, slippage,
-                             cash_rate)["position"]
+                             cash_rate, report.periods_per_year)["position"]
     trades = trade_log(prices, positions)
     trades = trades[trades.index >= report.split]
     oos_prices = prices[prices.index >= report.split]
 
     st.subheader("Quando compra e vende (periodo di prova)")
-    years = len(oos_prices) / 252
+    years = len(oos_prices) / report.periods_per_year  # 365 a year for crypto
     st.caption(
         f"{len(trades)} operazioni in {years:.1f} anni ({len(trades) / years:.1f} all'anno). "
         "Ogni operazione paga commissione e slippage: più operazioni, più costi."

@@ -10,6 +10,7 @@ from quantlab.metrics import (
     calmar_ratio,
     compare,
     drawdown,
+    infer_periods_per_year,
     max_drawdown,
     sharpe_ratio,
     summary,
@@ -95,3 +96,9 @@ def test_compare_passes_the_risk_free_rate_to_sharpe():
     r = pd.Series([0.02, 0.0] * 50)
     table = compare({"a": r}, risk_free=0.05)
     assert table.loc["sharpe", "a"] == pytest.approx(sharpe_ratio(r, risk_free=0.05))
+
+
+def test_infer_periods_per_year_stocks_vs_crypto():
+    assert infer_periods_per_year(pd.bdate_range("2020-01-01", periods=600)) == 252  # Mon-Fri
+    assert infer_periods_per_year(pd.date_range("2020-01-01", periods=600)) == 365  # every day
+    assert infer_periods_per_year(pd.DatetimeIndex(["2020-01-01"])) == 252  # too short to tell
