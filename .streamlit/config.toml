@@ -21,3 +21,5 @@ secondaryBackgroundColor = "#f6f7f5"
 
 [client]
 toolbarMode = "viewer"  # hides the developer "Deploy" button for visitors
+# Visitors see a short message instead of Python tracebacks (full details stay in the server log).
+showErrorDetails = "none"
