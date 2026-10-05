@@ -5,6 +5,11 @@ import pandas as pd
 import pytest
 
 from quantlab.metrics import (
+    calendar_returns,
+    drawdown_periods,
+    monthly_returns,
+    rolling_sharpe,
+    rolling_volatility,
     annualized_return,
     annualized_volatility,
     calmar_ratio,
@@ -102,3 +107,46 @@ def test_infer_periods_per_year_stocks_vs_crypto():
     assert infer_periods_per_year(pd.bdate_range("2020-01-01", periods=600)) == 252  # Mon-Fri
     assert infer_periods_per_year(pd.date_range("2020-01-01", periods=600)) == 365  # every day
     assert infer_periods_per_year(pd.DatetimeIndex(["2020-01-01"])) == 252  # too short to tell
+
+
+def test_calendar_returns_compound_within_each_year():
+    idx = pd.to_datetime(["2023-06-01", "2023-12-29", "2024-01-02"])
+    r = pd.Series([0.10, 0.10, -0.05], index=idx)
+    out = calendar_returns(r)
+    assert out.loc[2023] == pytest.approx(1.1 * 1.1 - 1)
+    assert out.loc[2024] == pytest.approx(-0.05)
+
+
+def test_monthly_returns_table_has_twelve_columns():
+    idx = pd.to_datetime(["2024-01-05", "2024-01-08", "2024-03-01"])
+    table = monthly_returns(pd.Series([0.01, 0.02, -0.03], index=idx))
+    assert list(table.columns) == list(range(1, 13))
+    assert table.loc[2024, 1] == pytest.approx(1.01 * 1.02 - 1)
+    assert np.isnan(table.loc[2024, 2])  # no data in February
+    assert table.loc[2024, 3] == pytest.approx(-0.03)
+
+
+def test_drawdown_periods_finds_depth_trough_and_recovery():
+    idx = pd.bdate_range("2024-01-01", periods=7)
+    # equity: 1.1, 0.99, 0.891, 1.069, 1.176 (new high), 1.059, 1.112 (not recovered)
+    r = pd.Series([0.10, -0.10, -0.10, 0.20, 0.10, -0.10, 0.05], index=idx)
+    table = drawdown_periods(r)
+    first = table.iloc[0]
+    assert first["depth"] == pytest.approx(0.891 / 1.1 - 1)  # -19%
+    assert (first["start"], first["trough"], first["recovery"]) == (idx[0], idx[2], idx[4])
+    second = table.iloc[1]
+    assert second["depth"] == pytest.approx(-0.10)
+    assert pd.isna(second["recovery"])  # still below the peak at the end
+
+
+def test_drawdown_periods_of_a_rising_series_is_empty():
+    assert drawdown_periods(pd.Series([0.01] * 5, index=pd.bdate_range("2024-01-01", periods=5))).empty
+
+
+def test_rolling_metrics_need_a_full_window():
+    r = pd.Series([0.01, -0.01] * 10, index=pd.bdate_range("2024-01-01", periods=20))
+    vol = rolling_volatility(r, window=5)
+    assert vol.iloc[:4].isna().all() and vol.iloc[4] == pytest.approx(r.iloc[:5].std() * np.sqrt(252))
+    sharpe = rolling_sharpe(r, window=5)
+    assert sharpe.iloc[4] == pytest.approx(r.iloc[:5].mean() / r.iloc[:5].std() * np.sqrt(252))
+    assert np.isnan(rolling_sharpe(pd.Series(0.001, index=r.index), window=5).iloc[-1])  # flat: undefined

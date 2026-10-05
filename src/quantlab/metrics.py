@@ -107,3 +107,55 @@ def compare(
     return pd.DataFrame(
         {name: summary(r, periods_per_year, risk_free) for name, r in results.items()}
     )
+
+
+def calendar_returns(returns: pd.Series) -> pd.Series:
+    """Compounded return of each calendar year, e.g. 2023 -> 0.24."""
+    by_year = (1 + returns).groupby(returns.index.year).prod() - 1
+    return by_year.rename_axis("year")
+
+
+def monthly_returns(returns: pd.Series) -> pd.DataFrame:
+    """Compounded return of each month as a year x month table (1..12), NaN where missing."""
+    by_month = (1 + returns).groupby([returns.index.year, returns.index.month]).prod() - 1
+    table = by_month.unstack()
+    table.index.name, table.columns.name = "year", "month"
+    return table.reindex(columns=range(1, 13))
+
+
+def drawdown_periods(returns: pd.Series, top: int = 5) -> pd.DataFrame:
+    """The `top` deepest falls: start (previous peak), trough, recovery date and depth.
+
+    `recovery` is NaT when the equity has not yet gone back above the previous peak.
+    """
+    dd = drawdown(returns)
+    rows = []
+    in_dd = dd < 0
+    # Each run of consecutive days below the peak is one drawdown period.
+    period_id = (in_dd != in_dd.shift()).cumsum()[in_dd]
+    for _, days in dd[in_dd].groupby(period_id):
+        trough = days.idxmin()
+        position = dd.index.get_loc(days.index[0])
+        start = dd.index[position - 1] if position > 0 else days.index[0]
+        after = dd.index.get_loc(days.index[-1]) + 1
+        recovery = dd.index[after] if after < len(dd) else pd.NaT
+        rows.append({"start": start, "trough": trough, "recovery": recovery, "depth": float(days.min()),
+                     "days_to_trough": (trough - start).days,
+                     "days_to_recover": (recovery - trough).days if pd.notna(recovery) else np.nan})
+    table = pd.DataFrame(rows, columns=["start", "trough", "recovery", "depth", "days_to_trough",
+                                        "days_to_recover"])
+    return table.sort_values("depth").head(top).reset_index(drop=True)
+
+
+def rolling_volatility(returns: pd.Series, window: int = TRADING_DAYS,
+                       periods_per_year: int = TRADING_DAYS) -> pd.Series:
+    """Annualised volatility over a moving window (NaN until the window is full)."""
+    return returns.rolling(window).std(ddof=1) * np.sqrt(periods_per_year)
+
+
+def rolling_sharpe(returns: pd.Series, window: int = TRADING_DAYS, risk_free: float = 0.0,
+                   periods_per_year: int = TRADING_DAYS) -> pd.Series:
+    """Annualised Sharpe ratio over a moving window (NaN until the window is full)."""
+    excess = returns - ((1 + risk_free) ** (1 / periods_per_year) - 1)
+    std = excess.rolling(window).std(ddof=1)
+    return (excess.rolling(window).mean() / std.where(std > MIN_STD)) * np.sqrt(periods_per_year)
