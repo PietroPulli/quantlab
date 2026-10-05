@@ -1,10 +1,8 @@
-"""Advanced view: every parameter, custom rules, all the tables of the truth machine."""
+"""Advanced view: every parameter, custom rules and the full analysis, organised in tabs."""
 
 import html
 from datetime import date
 
-import altair as alt
-import pandas as pd
 import streamlit as st
 
 from common import (
@@ -12,8 +10,6 @@ from common import (
     INDICATOR_LABELS,
     OPERATOR_LABELS,
     STRATEGY_UI,
-    TIME_AXIS,
-    comparison_chart,
     describe,
     factor_note,
     get_prices,
@@ -21,28 +17,34 @@ from common import (
     show_news,
     verdict_tone,
 )
+from panels import (
+    analyse,
+    annual_chart,
+    annual_table,
+    bootstrap_chart,
+    chart,
+    context_line,
+    drawdown_chart,
+    drawdown_table,
+    equity_chart,
+    kpi_strip,
+    metrics_table,
+    monthly_heatmap,
+    num,
+    pct,
+    rolling_chart,
+    signal_panel,
+    standard_kpis,
+    trade_kpis,
+    trades_chart,
+    trips_table,
+    verdict_bar,
+)
 from quantlab import data
-from quantlab.backtest import current_signal, run_backtest, trade_log
-from quantlab.metrics import calmar_ratio, drawdown
+from quantlab.backtest import current_signal
+from quantlab.metrics import drawdown_periods
 from quantlab.report import evaluate_strategy, format_report
 from quantlab.rules import Condition, Indicator, rule_strategy
-
-VERDICTS = {  # tone -> (tag, title, text)
-    "good": ("Batte il benchmark", "Batte il compra e tieni",
-             "Anche tenendo conto della fortuna, il vantaggio regge."),
-    "bad": ("Sotto il benchmark", "Peggio del compra e tieni",
-            "Anche tenendo conto della fortuna, lo svantaggio è netto."),
-    "neutral": ("Nessuna prova", "Nessuna prova che batta il compra e tieni",
-                "La differenza è compatibile con la fortuna."),
-}
-ROW_NAMES = {
-    "total_return": "Guadagno totale",
-    "annual_return": "Guadagno annuo",
-    "annual_volatility": "Volatilità annua",
-    "sharpe": "Sharpe",
-    "max_drawdown": "Peggior batosta",
-    "calmar": "Calmar",
-}
 
 
 ASSET = "il titolo scelto"
@@ -96,7 +98,7 @@ def render() -> None:
     # ---- Inputs (sidebar) ----
     with st.sidebar:
         st.header("1. Cosa provare")
-        ticker = st.text_input("Titolo (ticker Yahoo)", value="SPY").strip().upper()
+        ticker = st.text_input("Titolo (ticker Yahoo)", value="SPY", key="adv_ticker").strip().upper()
         col_a, col_b = st.columns(2)
         start = col_a.date_input("Dal", value=date(2015, 1, 1), min_value=date(1995, 1, 1))
         end = col_b.date_input("Al", value=date(2025, 12, 31), max_value=date.today())
@@ -193,32 +195,30 @@ def render() -> None:
         st.error(f"Parametri non validi: {exc}")
         st.stop()
 
-    # ---- Verdict ----
-    low, high = report.sharpe_diff_ci
+    # ---- Header: context, verdict, key numbers ----
     tone = verdict_tone(report)
-    tag, title, text = VERDICTS[tone]
     if strategy_func is rule_strategy:
         used = describe(entry) + (f"; uscita: {describe(exit_rule)}" if exit_rule else "")
     else:
         # e.g. {"window": 50} -> "Finestra N (giorni) 50", using the same labels as the sliders
         used = ", ".join(f"{ui['params'][k][0]} {v}" for k, v in report.params.items()) or "nessun parametro"
-    facts = {
-        "Regola": str(used),
-        "Periodo di prova dal": str(report.split.date()),
-        "Differenza di Sharpe": f"{report.sharpe_diff:+.2f}",
-        "Intervallo al 95%": f"{low:+.2f} … {high:+.2f}",
-        "Strategia avanti in": f"{report.share_beating:.0%} dei campioni",
-    }
-    facts_html = "".join(f"<div><dt>{k}</dt><dd>{html.escape(v)}</dd></div>" for k, v in facts.items())
-    st.markdown(
-        f'<div class="ql-verdict ql-{tone}"><div class="ql-tag">Verdetto · {tag}</div>'
-        f'<div class="ql-title">{title}</div><div class="ql-text">{text}</div>'
-        f'<dl class="ql-facts">{facts_html}</dl></div>',
-        unsafe_allow_html=True,
-    )
+    first, last = prices.index[0], prices.index[-1]
+    context_line([
+        f"<b>{html.escape(ticker)}</b>", f"<b>{html.escape(name)}</b> ({html.escape(used)})",
+        f"dati {first:%d/%m/%Y} – {last:%d/%m/%Y}", f"prova dal <b>{report.split:%d/%m/%Y}</b>",
+        f"costi {pct(commission + slippage, decimals=2)} per operazione", f"contanti {pct(cash_rate)} annuo",
+    ])
+    verdict_bar(report, tone)
+
+    period = st.radio("Periodo analizzato", ["Periodo di prova", "Storia completa"], key="adv_period",
+                      horizontal=True, label_visibility="collapsed",
+                      help="Il verdetto si basa sempre sul periodo di prova (dati mai usati per scegliere). "
+                           "La storia completa include anche gli anni usati per la scelta.")
+    a = analyse(report, prices, strategy_func, commission, slippage, cash_rate,
+                "test" if period == "Periodo di prova" else "full")
+    kpi_strip(standard_kpis(a))
 
     # Data snooping: every new idea tested on the same data is another lottery ticket.
-    # Remember what was tried on each ticker in this session (a grid counts as all its combinations).
     tried = st.session_state.setdefault("tried", {}).setdefault(ticker, {})
     tried[f"{name}: {grid if grid else used}"] = len(grid) if grid else 1
     if len(tried) > 1:
@@ -226,111 +226,103 @@ def render() -> None:
             f"Su {ticker} in questa sessione hai provato {len(tried)} strategie diverse "
             f"({sum(tried.values())} combinazioni di parametri in tutto). Più idee provi sugli stessi dati, "
             "più è probabile che la migliore sembri buona solo per fortuna. "
-            "Il verdetto qui sopra non ne tiene conto: vale per un solo tentativo."
+            "Il verdetto non ne tiene conto: vale per un solo tentativo."
         )
     for warning in report.warnings:
         st.warning(warning)
 
-    # ---- What the rule says today ----
-    # The test above stops at the chosen end date; here we apply the same rule, with the same
-    # parameters, to prices up to the latest close available.
-    st.subheader("Cosa dice la regola oggi")
-    try:
-        live_prices = get_prices(ticker, str(start), str(date.today()))
-        day, value, since = current_signal(strategy_func(live_prices, **report.params))
-    except Exception as exc:  # network problems, or a rule that cannot be applied
-        st.info(f"Non riesco a calcolare il segnale di oggi: {exc}")
-    else:
-        state = "DENTRO" if value > 0 else "FUORI"
-        meaning = ("essere investiti in" if value > 0 else "stare in contanti, fuori da")
-        with st.container(border=True):
-            cols = st.columns([1, 2])
-            cols[0].markdown(f'<div class="ql-tag">Segnale alla chiusura del {day.date()}</div>'
-                             f'<div class="ql-title">{state}</div>', unsafe_allow_html=True)
-            cols[1].markdown(
-                f"Con i prezzi fino al **{day.date()}** (ultima chiusura {live_prices.iloc[-1]:.2f}), "
-                f"la regola dice di {meaning} **{ticker}**, ininterrottamente dal **{since.date()}**. "
-                "Il segnale vale dalla seduta successiva."
-            )
-        st.caption(
-            "Questo è il risultato della tua regola applicata ai prezzi di oggi, non un consiglio di investimento. "
-            "Quanto fidarsi della regola lo dice il verdetto qui sopra"
-            + (": e qui non ha battuto il compra e tieni." if tone != "good" else ".")
-        )
-
-    # ---- Numbers ----
-    oos_returns = report.returns[report.returns.index >= report.split]
-    oos = report.out_of_sample.copy()
-    oos.loc["calmar"] = [calmar_ratio(oos_returns[c]) for c in oos.columns]
     labels = {"strategy": name, "buy_and_hold": "Compra e tieni"}
+    returns = a["returns"]
+    tabs = st.tabs(["Sintesi", "Rendimenti", "Rischio", "Operazioni", "Robustezza", "Segnale e notizie", "Dati"])
 
-    def pretty(table: pd.DataFrame) -> pd.DataFrame:
-        """Metrics table as strings: percentages for returns and risk, two decimals for ratios."""
-        shown = table.rename(index=ROW_NAMES, columns=labels).astype(object)
-        for metric in shown.index:
-            fmt = "{:.2f}" if metric in ("Sharpe", "Calmar") else "{:.1%}"
-            shown.loc[metric] = [fmt.format(v) if pd.notna(v) else "n/d" for v in shown.loc[metric]]
-        return shown
+    with tabs[0]:  # Summary
+        log = st.toggle("Scala logaritmica", key="adv_log",
+                        help="Su periodi lunghi rende confrontabili le variazioni percentuali di inizio e fine.")
+        st.markdown("##### Valore di 1 € investito, costi inclusi")
+        chart(equity_chart(returns, labels, log=log))
+        st.markdown("##### Distanza dal massimo precedente")
+        chart(drawdown_chart(returns, labels))
 
-    left, right = st.columns([3, 2])
-    with left:
-        st.subheader("Quanto diventa 1 € (periodo di prova, costi inclusi)")
-        st.altair_chart(comparison_chart((1 + oos_returns).cumprod(), labels, "Valore di 1 €", ".2f"),
-                        width="stretch")
-        st.subheader("Perdita dal massimo precedente")
-        st.altair_chart(comparison_chart(oos_returns.apply(drawdown), labels, "Perdita", ".0%"), width="stretch")
-    with right:
-        st.subheader("Periodo di prova")
-        st.table(pretty(oos))
-        st.subheader("Periodo di scelta (in-sample)")
-        if grid:
-            st.caption("Qui la strategia è avvantaggiata: i parametri sono stati scelti guardando questi dati.")
+    with tabs[1]:  # Returns
+        left, right = st.columns([3, 2])
+        with left:
+            st.markdown("##### Rendimento per anno solare")
+            chart(annual_chart(returns, labels))
+        with right:
+            st.markdown("##### Tabella annuale")
+            st.table(annual_table(returns, labels))
+            st.caption("Il primo e l'ultimo anno possono essere parziali: contano solo i giorni del periodo analizzato.")
+        st.markdown(f"##### Rendimenti mensili: {html.escape(name)}")
+        chart(monthly_heatmap(returns["strategy"]))
+        st.markdown("##### Rendimenti mensili: compra e tieni")
+        chart(monthly_heatmap(returns["buy_and_hold"]))
+
+    with tabs[2]:  # Risk
+        st.markdown("##### I cali più profondi della strategia")
+        if drawdown_periods(returns["strategy"]).empty:
+            st.caption("Nessun calo nel periodo.")
         else:
-            st.caption("Parametri fissi: nessuna ottimizzazione automatica. Ma se li hai scelti tu "
-                       "dopo aver guardato i grafici, li hai scelti sul passato anche tu.")
-        st.table(pretty(report.in_sample))
-        if report.walk_forward is not None:
-            st.subheader("Walk-forward")
-            st.caption("Riscelta dei parametri ogni anno, usando solo i 3 anni precedenti.")
-            st.table(pretty(report.walk_forward))
+            st.table(drawdown_table(returns["strategy"]))
+        window = min(report.periods_per_year, max(20, len(returns) // 4))
+        left, right = st.columns(2)
+        with left:
+            st.markdown("##### Volatilità mobile")
+            chart(rolling_chart(returns, labels, "vol", window, report.periods_per_year, cash_rate))
+        with right:
+            st.markdown("##### Sharpe mobile")
+            chart(rolling_chart(returns, labels, "sharpe", window, report.periods_per_year, cash_rate))
+        st.caption(f"Finestra mobile di {window} giorni di borsa.")
 
-    # ---- When does it trade? ----
-    positions = run_backtest(prices, strategy_func(prices, **report.params), commission, slippage,
-                             cash_rate, report.periods_per_year)["position"]
-    trades = trade_log(prices, positions)
-    trades = trades[trades.index >= report.split]
-    oos_prices = prices[prices.index >= report.split]
-
-    st.subheader("Quando compra e vende (periodo di prova)")
-    years = len(oos_prices) / report.periods_per_year  # 365 a year for crypto
-    st.caption(
-        f"{len(trades)} operazioni in {years:.1f} anni ({len(trades) / years:.1f} all'anno). "
-        "Ogni operazione paga commissione e slippage: più operazioni, più costi."
-    )
-    price_line = (
-        alt.Chart(oos_prices.rename("price").rename_axis("date").reset_index())
-        .mark_line(color="#7d847c", strokeWidth=1.3)
-        .encode(x=TIME_AXIS, y=alt.Y("price:Q", title="Prezzo", scale=alt.Scale(zero=False)))
-    )
-    trade_points = (
-        alt.Chart(trades.rename_axis("date").reset_index())
-        .mark_point(filled=True, size=160, opacity=1)
-        .encode(
-            x="date:T",
-            y="price:Q",
-            color=alt.Color("action:N", title=None,
-                            scale=alt.Scale(domain=["buy", "sell"], range=["#2e6b4a", "#9b2f2f"]),
-                            legend=alt.Legend(labelExpr="datum.label == 'buy' ? 'Compra' : 'Vende'")),
-            shape=alt.Shape("action:N",
-                            scale=alt.Scale(domain=["buy", "sell"], range=["triangle-up", "triangle-down"]),
-                            legend=None),
-            tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("action:N", title="Operazione"),
-                     alt.Tooltip("price:Q", title="Prezzo", format=".2f")],
+    with tabs[3]:  # Trades
+        st.caption(
+            f"{len(a['trades'])} operazioni in {num(a['years'], 1)} anni "
+            f"({num(len(a['trades']) / a['years'], 1)} all'anno). "
+            "Ogni operazione paga commissione e slippage: più operazioni, più costi."
         )
-    )
-    st.altair_chart(price_line + trade_points, width="stretch")
+        chart(trades_chart(a["prices"], a["trades"]))
+        kpi_strip(trade_kpis(a["stats"]))  # every strategy in the app is long/flat: round trips exist
+        if not a["trips"].empty:
+            st.markdown("##### Elenco operazioni")
+            st.dataframe(trips_table(a["trips"]), width="stretch", height=min(420, 38 + 35 * len(a["trips"])))
 
-    with st.expander("Report completo in testo"):
+    with tabs[4]:  # Robustness
+        left, right = st.columns(2)
+        with left:
+            st.markdown("##### Periodo di scelta (in-sample)")
+            st.caption("Qui la strategia è avvantaggiata: i parametri sono stati scelti guardando questi dati."
+                       if grid else "Parametri fissi: nessuna ottimizzazione automatica. Ma se li hai scelti tu "
+                                    "dopo aver guardato i grafici, li hai scelti sul passato anche tu.")
+            st.table(metrics_table(report.in_sample, labels))
+        with right:
+            st.markdown("##### Periodo di prova (out-of-sample)")
+            st.caption("Dati mai usati per scegliere niente: è su questo periodo che si basa il verdetto.")
+            st.table(metrics_table(report.out_of_sample, labels))
+        if report.walk_forward is not None:
+            st.markdown("##### Walk-forward")
+            st.caption("Ogni anno i parametri vengono riscelti usando solo i 3 anni precedenti.")
+            st.table(metrics_table(report.walk_forward, labels))
+        st.markdown("##### Bootstrap: quanto conta la fortuna")
+        chart(bootstrap_chart(report.sharpe_diff_samples, report.sharpe_diff_ci))
+        st.caption(
+            f"La storia del periodo di prova è stata rimescolata {len(report.sharpe_diff_samples)} volte "
+            "a blocchi di 20 giorni. Ogni barra conta quante volte la differenza di Sharpe è caduta in quella "
+            "zona. Linee tratteggiate: intervallo al 95%. Se contiene lo zero (linea nera), il vantaggio "
+            "potrebbe essere fortuna."
+        )
+
+    with tabs[5]:  # Signal and news
+        try:
+            live_prices = get_prices(ticker, str(start), str(date.today()))
+            day_, value, since = current_signal(strategy_func(live_prices, **report.params))
+        except Exception as exc:  # network problems, or a rule that cannot be applied
+            st.info(f"Non riesco a calcolare il segnale di oggi: {exc}")
+        else:
+            signal_panel(ticker, day_, value, since, live_prices.iloc[-1], tone)
+        show_news(ticker)
+
+    with tabs[6]:  # Data
+        export = report.returns.rename(columns={"strategy": "strategia", "buy_and_hold": "compra_e_tieni"})
+        st.download_button("Scarica i rendimenti giornalieri (CSV)", export.to_csv().encode("utf-8"),
+                           file_name=f"quantlab_{ticker}.csv", mime="text/csv")
+        st.markdown("##### Report completo")
         st.code(format_report(report), language=None)
-
-    show_news(ticker)

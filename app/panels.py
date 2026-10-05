@@ -1,0 +1,339 @@
+"""Result panels shared by both views: verdict bar, KPI strip, charts and tables.
+
+Only presentation lives here: every number is computed by the quantlab library.
+"""
+
+import html
+
+import altair as alt
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+from common import COLORS, LINE, MUTED, NEG, NUMBERS_IT, POS, TIME_AXIS
+from quantlab.backtest import round_trips, run_backtest, trade_log, trade_stats
+from quantlab.metrics import (
+    calendar_returns,
+    calmar_ratio,
+    drawdown,
+    drawdown_periods,
+    monthly_returns,
+    rolling_sharpe,
+    rolling_volatility,
+    summary,
+)
+from quantlab.report import StrategyReport
+
+MONTHS = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"]
+
+
+# ---------------------------------------------------------------- formatting
+def pct(x: float, signed: bool = False, decimals: int = 1) -> str:
+    """0.1234 -> '12,3%' (Italian decimal comma); NaN -> 'n/d'."""
+    if x is None or pd.isna(x):
+        return "n/d"
+    return f"{x * 100:{'+' if signed else ''}.{decimals}f}%".replace(".", ",")
+
+
+def num(x: float, decimals: int = 2, signed: bool = False) -> str:
+    if x is None or pd.isna(x):
+        return "n/d"
+    return f"{x:{'+' if signed else ''}.{decimals}f}".replace(".", ",")
+
+
+def euro(x: float) -> str:
+    return f"{x:,.0f} €".replace(",", ".")
+
+
+def day(ts) -> str:
+    return "aperta" if pd.isna(ts) else pd.Timestamp(ts).strftime("%d/%m/%Y")
+
+
+# ---------------------------------------------------------------- analytics
+def analyse(report: StrategyReport, prices: pd.Series, strategy, commission: float, slippage: float,
+            cash_rate: float, period: str = "test") -> dict:
+    """Everything the panels show, for the test period (out-of-sample) or the full history."""
+    positions = run_backtest(prices, strategy(prices, **report.params), commission, slippage, cash_rate,
+                             report.periods_per_year)["position"]
+    start = report.split if period == "test" else report.returns.index[0]
+    keep = report.returns.index >= start
+    returns = report.returns[keep]
+    trips = round_trips(prices, positions, commission + slippage)
+    trips = trips[trips["entry_date"] >= start] if period == "test" else trips
+    trades = trade_log(prices, positions)
+    years = len(returns) / report.periods_per_year
+    return {
+        "start": start,
+        "returns": returns,
+        "metrics": pd.DataFrame({c: summary(returns[c], report.periods_per_year, cash_rate) for c in returns}),
+        "calmar": {c: calmar_ratio(returns[c], report.periods_per_year) for c in returns},
+        "exposure": float(positions[keep].mean()),
+        "trades": trades[trades.index >= start],
+        "trips": trips,
+        "stats": trade_stats(trips[~trips["open"]]),  # an open trade has no result yet
+        "years": years,
+        "prices": prices[prices.index >= start],
+    }
+
+
+# ---------------------------------------------------------------- blocks
+def context_line(parts: list[str]) -> None:
+    st.markdown('<div class="ql-context">' + " &nbsp;·&nbsp; ".join(parts) + "</div>", unsafe_allow_html=True)
+
+
+VERDICTS = {  # tone -> (pill, headline, explanation)
+    "good": ("Supera il benchmark", "Batte il compra e tieni",
+             "Anche tenendo conto della fortuna (bootstrap), il vantaggio regge."),
+    "bad": ("Sotto il benchmark", "Peggio del compra e tieni",
+            "Anche tenendo conto della fortuna (bootstrap), lo svantaggio è netto."),
+    "neutral": ("Nessuna evidenza", "Nessuna prova che batta il compra e tieni",
+                "La differenza rispetto al benchmark è compatibile con la fortuna."),
+}
+
+
+def verdict_bar(report: StrategyReport, tone: str, plain: str | None = None) -> None:
+    """One line: verdict pill, headline, and the three numbers it is based on."""
+    pill, head, sub = VERDICTS[tone]
+    low, high = report.sharpe_diff_ci
+    stats = "" if plain else (
+        f'<div class="ql-stats">'
+        f'<div><div class="ql-label">Diff. Sharpe</div><div class="ql-bench">{num(report.sharpe_diff, signed=True)}</div></div>'
+        f'<div><div class="ql-label">Intervallo 95%</div><div class="ql-bench">{num(low, signed=True)} … {num(high, signed=True)}</div></div>'
+        f'<div><div class="ql-label">Avanti nei campioni</div><div class="ql-bench">{pct(report.share_beating, decimals=0)}</div></div>'
+        f'</div>')
+    st.markdown(
+        f'<div class="ql-verdict ql-{tone}"><span class="ql-pill">{pill}</span>'
+        f'<div><div class="ql-head">{head}</div><div class="ql-sub">{html.escape(plain or sub)}</div></div>'
+        f'{stats}</div>', unsafe_allow_html=True)
+
+
+def kpi_strip(items: list[tuple]) -> None:
+    """items: (label, value, benchmark text or None, +1 if better / -1 if worse / 0)."""
+    cells = []
+    for label, value, bench, better in items:
+        cls = {1: "ql-pos", -1: "ql-neg"}.get(better, "")
+        bench_html = f'<div class="ql-bench">{bench}</div>' if bench else ""
+        cells.append(f'<div class="ql-kpi"><div class="ql-label">{label}</div>'
+                     f'<div class="ql-value {cls}">{value}</div>{bench_html}</div>')
+    cols = len(items) if len(items) <= 6 else (len(items) + 1) // 2  # 8 items -> 2 rows of 4
+    st.markdown(f'<div class="ql-kpis" style="--cols:{cols}">' + "".join(cells) + "</div>", unsafe_allow_html=True)
+
+
+def _better(a: float, b: float, higher_is_better: bool = True) -> int:
+    if pd.isna(a) or pd.isna(b) or np.isclose(a, b):
+        return 0
+    return 1 if (a > b) == higher_is_better else -1
+
+
+def standard_kpis(a: dict) -> list[tuple]:
+    m, c = a["metrics"], a["calmar"]
+    s, b = m["strategy"], m["buy_and_hold"]
+    return [
+        ("Rendimento totale", pct(s["total_return"], True), f"B&H {pct(b['total_return'], True)}",
+         _better(s["total_return"], b["total_return"])),
+        ("Rendimento annuo", pct(s["annual_return"], True), f"B&H {pct(b['annual_return'], True)}",
+         _better(s["annual_return"], b["annual_return"])),
+        ("Volatilità annua", pct(s["annual_volatility"]), f"B&H {pct(b['annual_volatility'])}",
+         _better(s["annual_volatility"], b["annual_volatility"], higher_is_better=False)),
+        ("Sharpe", num(s["sharpe"]), f"B&H {num(b['sharpe'])}", _better(s["sharpe"], b["sharpe"])),
+        ("Max drawdown", pct(s["max_drawdown"]), f"B&H {pct(b['max_drawdown'])}",
+         _better(s["max_drawdown"], b["max_drawdown"])),
+        ("Calmar", num(c["strategy"]), f"B&H {num(c['buy_and_hold'])}", _better(c["strategy"], c["buy_and_hold"])),
+        ("Esposizione", pct(a["exposure"], decimals=0), "B&H 100%", 0),
+        ("Operazioni / anno", num(len(a["trades"]) / a["years"], 1), f"{len(a['trades'])} in totale", 0),
+    ]
+
+
+# ---------------------------------------------------------------- charts
+def _series_color(labels: dict) -> alt.Color:
+    return alt.Color("series:N", title=None, legend=alt.Legend(orient="top", labelLimit=0, title=None),
+                     scale=alt.Scale(domain=[labels[k] for k in COLORS], range=list(COLORS.values())))
+
+
+def _long(table: pd.DataFrame, labels: dict) -> pd.DataFrame:
+    out = table.rename_axis("date").reset_index().melt("date", var_name="series", value_name="value")
+    out["series"] = out["series"].map(labels)
+    return out
+
+
+def equity_chart(returns: pd.DataFrame, labels: dict, start_value: float = 1.0, log: bool = False,
+                 y_title: str = "Valore di 1 €") -> alt.Chart:
+    data = _long(start_value * (1 + returns).cumprod(), labels)
+    y = alt.Y("value:Q", title=y_title, scale=alt.Scale(type="log" if log else "linear", zero=False),
+              axis=alt.Axis(labelExpr=NUMBERS_IT, format=",.2f" if start_value == 1 else ",.0f"))
+    return (alt.Chart(data, height=320).mark_line(strokeWidth=1.6)
+            .encode(x=TIME_AXIS, y=y, color=_series_color(labels),
+                    tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("series:N", title="Serie"),
+                             alt.Tooltip("value:Q", title=y_title, format=",.2f")]))
+
+
+def drawdown_chart(returns: pd.DataFrame, labels: dict) -> alt.Chart:
+    data = _long(returns.apply(drawdown), labels)
+    y = alt.Y("value:Q", title="Distanza dal massimo", axis=alt.Axis(format=".0%", labelExpr=NUMBERS_IT))
+    area = (alt.Chart(data[data["series"] == labels["strategy"]], height=180)
+            .mark_area(color=COLORS["strategy"], opacity=0.18, line={"color": COLORS["strategy"], "strokeWidth": 1.2})
+            .encode(x=TIME_AXIS, y=y))
+    bench = (alt.Chart(data[data["series"] == labels["buy_and_hold"]])
+             .mark_line(color=COLORS["buy_and_hold"], strokeWidth=1.1).encode(x=TIME_AXIS, y=y))
+    return area + bench
+
+
+def annual_chart(returns: pd.DataFrame, labels: dict) -> alt.Chart:
+    table = pd.DataFrame({c: calendar_returns(returns[c]) for c in returns})
+    data = table.rename_axis("year").reset_index().melt("year", var_name="series", value_name="value")
+    data["series"] = data["series"].map(labels)
+    return (alt.Chart(data, height=260).mark_bar()
+            .encode(x=alt.X("year:O", title=None, axis=alt.Axis(labelAngle=0)), xOffset="series:N",
+                    y=alt.Y("value:Q", title="Rendimento", axis=alt.Axis(format=".0%", labelExpr=NUMBERS_IT)),
+                    color=_series_color(labels),
+                    tooltip=[alt.Tooltip("year:O", title="Anno"), alt.Tooltip("series:N", title="Serie"),
+                             alt.Tooltip("value:Q", title="Rendimento", format="+.1%")]))
+
+
+def monthly_heatmap(returns: pd.Series) -> alt.Chart:
+    table = monthly_returns(returns)
+    data = table.stack().dropna().rename("value").reset_index()  # months without data stay empty
+    data["mese"] = data["month"].map(lambda m: MONTHS[m - 1])
+    data["label"] = data["value"].map(lambda v: pct(v, signed=True))
+    limit = max(0.01, float(data["value"].abs().quantile(0.95))) if len(data) else 0.05
+    base = alt.Chart(data, height=max(120, 26 * table.shape[0])).encode(
+        x=alt.X("mese:O", sort=MONTHS, title=None, axis=alt.Axis(orient="top", labelAngle=0)),
+        y=alt.Y("year:O", title=None))
+    cells = base.mark_rect(stroke="#ffffff", strokeWidth=1).encode(
+        color=alt.Color("value:Q", legend=None,
+                        scale=alt.Scale(domain=[-limit, 0, limit], range=[NEG, "#f6f7f9", POS], clamp=True,
+                                        interpolate="rgb")),
+        tooltip=[alt.Tooltip("year:O", title="Anno"), alt.Tooltip("mese:N", title="Mese"),
+                 alt.Tooltip("label:N", title="Rendimento")])
+    text = base.mark_text(font="Geist Mono", fontSize=10).encode(
+        text="label:N",
+        color=alt.condition(f"abs(datum.value) > {limit * 0.6}", alt.value("#ffffff"), alt.value("#14181f")))
+    return cells + text
+
+
+def rolling_chart(returns: pd.DataFrame, labels: dict, kind: str, window: int, ppy: int, rf: float) -> alt.Chart:
+    if kind == "sharpe":
+        table = returns.apply(lambda r: rolling_sharpe(r, window, rf, ppy))
+        y = alt.Y("value:Q", title=f"Sharpe su {window} giorni", axis=alt.Axis(labelExpr=NUMBERS_IT))
+    else:
+        table = returns.apply(lambda r: rolling_volatility(r, window, ppy))
+        y = alt.Y("value:Q", title=f"Volatilità su {window} giorni", axis=alt.Axis(format=".0%", labelExpr=NUMBERS_IT))
+    lines = (alt.Chart(_long(table.dropna(), labels), height=200).mark_line(strokeWidth=1.3)
+             .encode(x=TIME_AXIS, y=y, color=_series_color(labels)))
+    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color=LINE).encode(y="y:Q")
+    return zero + lines
+
+
+def trades_chart(prices: pd.Series, trades: pd.DataFrame) -> alt.Chart:
+    line = (alt.Chart(prices.rename("price").rename_axis("date").reset_index(), height=300)
+            .mark_line(color="#4b5563", strokeWidth=1.1)
+            .encode(x=TIME_AXIS, y=alt.Y("price:Q", title="Prezzo", scale=alt.Scale(zero=False),
+                                         axis=alt.Axis(labelExpr=NUMBERS_IT))))
+    points = (alt.Chart(trades.rename_axis("date").reset_index())
+              .mark_point(filled=True, size=90, opacity=1)
+              .encode(x="date:T", y="price:Q",
+                      color=alt.Color("action:N", title=None, scale=alt.Scale(domain=["buy", "sell"], range=[POS, NEG]),
+                                      legend=alt.Legend(orient="top",
+                                                        labelExpr="datum.label == 'buy' ? 'Acquisto' : 'Vendita'")),
+                      shape=alt.Shape("action:N", legend=None,
+                                      scale=alt.Scale(domain=["buy", "sell"], range=["triangle-up", "triangle-down"])),
+                      tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("action:N", title="Operazione"),
+                               alt.Tooltip("price:Q", title="Prezzo", format=",.2f")]))
+    return line + points
+
+
+def bootstrap_chart(samples: np.ndarray, ci: tuple[float, float]) -> alt.Chart:
+    data = pd.DataFrame({"d": samples[~np.isnan(samples)]})
+    bars = (alt.Chart(data, height=220).mark_bar(color="#b8c2d6")
+            .encode(x=alt.X("d:Q", bin=alt.Bin(maxbins=45), title="Sharpe strategia − Sharpe compra e tieni"),
+                    y=alt.Y("count():Q", title="Campioni")))
+    zero = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(color="#14181f", strokeWidth=1.5).encode(x="x:Q")
+    bounds = (alt.Chart(pd.DataFrame({"x": list(ci)}))
+              .mark_rule(color=COLORS["strategy"], strokeDash=[4, 3], strokeWidth=1.5).encode(x="x:Q"))
+    return bars + zero + bounds
+
+
+# ---------------------------------------------------------------- tables
+ROW_NAMES = {"total_return": "Rendimento totale", "annual_return": "Rendimento annuo",
+             "annual_volatility": "Volatilità annua", "sharpe": "Sharpe", "max_drawdown": "Max drawdown"}
+
+
+def metrics_table(table: pd.DataFrame, labels: dict) -> pd.DataFrame:
+    """quantlab.metrics.compare output -> formatted strings, one column per series."""
+    rows = {}
+    for key, name in ROW_NAMES.items():
+        signed = key in ("total_return", "annual_return")
+        rows[name] = [num(v) if key == "sharpe" else pct(v, signed=signed) for v in table.loc[key]]
+    return pd.DataFrame(rows, index=[labels[c] for c in table.columns]).T
+
+
+def annual_table(returns: pd.DataFrame, labels: dict) -> pd.DataFrame:
+    table = pd.DataFrame({labels[c]: calendar_returns(returns[c]) for c in returns})
+    table["Differenza"] = table.iloc[:, 0] - table.iloc[:, 1]
+    return table.map(lambda v: pct(v, signed=True)).rename_axis("Anno")
+
+
+def _numbered(columns: dict) -> pd.DataFrame:
+    """Table with rows numbered from 1. Columns are passed as plain lists on purpose: a pandas
+    Series would be aligned on its own index (0, 1, ...) and every row would shift by one."""
+    columns = {name: list(values) for name, values in columns.items()}
+    n = len(next(iter(columns.values()))) if columns else 0
+    return pd.DataFrame(columns, index=pd.RangeIndex(1, n + 1, name="#"))
+
+
+def drawdown_table(returns: pd.Series) -> pd.DataFrame:
+    periods = drawdown_periods(returns)
+    return _numbered({
+        "Inizio": periods["start"].map(day), "Minimo": periods["trough"].map(day),
+        "Recupero": periods["recovery"].map(day), "Profondità": periods["depth"].map(pct),
+        "Giorni al minimo": periods["days_to_trough"].astype(int).astype(str),
+        "Giorni al recupero": periods["days_to_recover"].map(lambda d: "—" if pd.isna(d) else str(int(d))),
+    })
+
+
+def trips_table(trips: pd.DataFrame) -> pd.DataFrame:
+    return _numbered({
+        "Entrata": trips["entry_date"].map(day), "Prezzo entrata": trips["entry_price"].map(num),
+        "Uscita": [("aperta" if o else day(d)) for d, o in zip(trips["exit_date"], trips["open"])],
+        "Prezzo uscita": trips["exit_price"].map(num),
+        "Risultato netto": trips["net_return"].map(lambda v: pct(v, signed=True)),
+        "Giorni": trips["days"].astype(str),
+    })
+
+
+def trade_kpis(stats: dict) -> list[tuple]:
+    return [
+        ("Operazioni chiuse", str(stats["trades"]), "acquisto + vendita", 0),
+        ("Vincenti", pct(stats["win_rate"], decimals=0), None, 0),
+        ("Guadagno medio", pct(stats["avg_win"], True), None, 0),
+        ("Perdita media", pct(stats["avg_loss"], True), None, 0),
+        ("Profit factor", num(stats["profit_factor"]), "guadagni / perdite", 0),
+        ("Durata media", f"{num(stats['avg_days'], 0)} gg", None, 0),
+    ]
+
+
+def signal_panel(ticker: str, day_, value: float, since, last_price: float, tone: str,
+                 who: str = "La regola") -> None:
+    """What the rule says at the latest close, with the reminder that it is not advice."""
+    state = "DENTRO" if value > 0 else "FUORI"
+    meaning = "essere investiti in" if value > 0 else "stare in contanti, fuori da"
+    st.markdown(
+        f'<div class="ql-signal"><div class="ql-label">Segnale alla chiusura del {day_:%d/%m/%Y}</div>'
+        f'<div class="ql-state">{state}</div>'
+        f'<div class="ql-sub">{who} dice di {meaning} <b>{html.escape(ticker)}</b>, ininterrottamente dal '
+        f'{since:%d/%m/%Y} (ultima chiusura {num(last_price)}). Il segnale vale dalla seduta successiva.</div></div>',
+        unsafe_allow_html=True)
+    st.caption(
+        "È il risultato della regola applicata ai prezzi di oggi, non un consiglio di investimento. "
+        "Quanto fidarsi della regola lo dice il verdetto"
+        + (": e qui non ha battuto il compra e tieni." if tone != "good" else ".")
+    )
+
+
+def chart(c: alt.Chart) -> None:
+    """Render an Altair chart with the app's chart settings."""
+    st.altair_chart(c.configure_view(strokeWidth=0)
+                    .configure_axis(labelColor=MUTED, titleColor=MUTED, gridColor="#eceff3", domainColor=LINE,
+                                    labelFont="Geist", titleFont="Geist", titleFontWeight=500)
+                    .configure_legend(labelColor="#14181f", labelFont="Geist"),
+                    width="stretch")

@@ -2,11 +2,25 @@
 
 from datetime import date
 
-import pandas as pd
+import html
+
 import streamlit as st
 
-from common import FACTORS, comparison_chart, get_prices, load_factor, show_news, verdict_tone
-from quantlab.backtest import DEFAULT_COMMISSION, DEFAULT_SLIPPAGE, current_signal, run_backtest, trade_log
+from common import FACTORS, get_prices, load_factor, show_news, verdict_tone
+from panels import (
+    analyse,
+    annual_chart,
+    chart,
+    context_line,
+    equity_chart,
+    euro,
+    kpi_strip,
+    num,
+    pct,
+    signal_panel,
+    verdict_bar,
+)
+from quantlab.backtest import DEFAULT_COMMISSION, DEFAULT_SLIPPAGE, current_signal
 from quantlab.report import evaluate_strategy
 from quantlab.rules import Condition, Indicator, rule_strategy
 from quantlab.strategies import breakout, mean_reversion, momentum
@@ -101,18 +115,19 @@ IDEAS = {
     ),
 }
 
-VERDICTS = {  # tone -> (tag, sentence)
-    "good": ("Ha funzionato", "Questa idea ha battuto il semplice comprare e tenere, "
-                              "e il vantaggio non sembra dovuto alla fortuna."),
-    "bad": ("Ha fatto peggio", "Questa idea ha fatto chiaramente peggio del semplice comprare e tenere."),
-    "neutral": ("Nessun vantaggio dimostrato", "Non c'è prova che questa idea sia meglio del semplice "
-                                               "comprare e tenere: la differenza potrebbe essere solo fortuna."),
+SENTENCES = {  # tone -> the verdict in plain words
+    "good": "Questa idea ha battuto il semplice comprare e tenere, e il vantaggio non sembra dovuto alla fortuna.",
+    "bad": "Questa idea ha fatto chiaramente peggio del semplice comprare e tenere.",
+    "neutral": "Non c'è prova che questa idea sia meglio del semplice comprare e tenere: "
+               "la differenza potrebbe essere solo fortuna.",
 }
 
 
-def euro(x: float) -> str:
-    """1234.5 -> '1.235 €' (Italian thousands separator)."""
-    return f"{x:,.0f} €".replace(",", ".")
+def _open_advanced(ticker: str) -> None:
+    """Button callback: show the same asset in the advanced view."""
+    st.session_state.view = "Approfondita"
+    st.session_state.adv_ticker = ticker
+    st.session_state.started = True
 
 
 def render() -> None:
@@ -153,54 +168,48 @@ def render() -> None:
 
     with st.spinner("Faccio i conti..."):
         report = evaluate_strategy(prices, strategy, params=params, name=idea, cash_rate=CASH_RATE)
-        positions = run_backtest(prices, strategy(prices, **params), DEFAULT_COMMISSION, DEFAULT_SLIPPAGE,
-                                 CASH_RATE, report.periods_per_year)["position"]
+        # Only the test period is judged: the earlier years are used as history, never scored.
+        a = analyse(report, prices, strategy, DEFAULT_COMMISSION, DEFAULT_SLIPPAGE, CASH_RATE, "test")
 
-    # Only the test period counts: the earlier years are used as history, never judged.
-    in_test = report.returns.index >= report.split
-    growth = amount * (1 + report.returns[in_test]).cumprod()
-    years = in_test.sum() / report.periods_per_year  # 365 a year for crypto
-    trades = trade_log(prices, positions)
-    n_trades = int((trades.index >= report.split).sum())
-    worst = report.out_of_sample.loc["max_drawdown"]
+    growth = amount * (1 + a["returns"]).cumprod()
+    final, final_bh = growth["strategy"].iloc[-1], growth["buy_and_hold"].iloc[-1]
+    m = a["metrics"]
     tone = verdict_tone(report)
-    tag, sentence = VERDICTS[tone]
-    years_text = f"{years:.1f}".replace(".", ",")
+    years_text = num(a["years"], 1)
 
-    st.markdown(
-        f'<div class="ql-verdict ql-{tone}">'
-        f'<div class="ql-tag">{tag}</div>'
-        f'<div class="ql-big">{euro(amount)} sarebbero diventati {euro(growth["strategy"].iloc[-1])}</div>'
-        f'<div class="ql-text">Con l\'idea «{idea}» su {asset}, negli ultimi {years_text} anni. '
-        f'Comprando e tenendo sarebbero diventati <b>{euro(growth["buy_and_hold"].iloc[-1])}</b>.</div>'
-        f'<div class="ql-text"><b>{sentence}</b></div>'
-        f'<dl class="ql-facts">'
-        f'<div><dt>Momento peggiore</dt><dd>{worst["strategy"]:.0%} (comprando e tenendo {worst["buy_and_hold"]:.0%})</dd></div>'
-        f'<div><dt>Operazioni</dt><dd>{n_trades} in {years_text} anni</dd></div>'
-        f'<div><dt>Tempo investito</dt><dd>{positions[in_test].mean():.0%} dei giorni</dd></div>'
-        f'</dl></div>',
-        unsafe_allow_html=True,
-    )
+    context_line([f"<b>{html.escape(asset)}</b>", f"<b>{html.escape(idea)}</b>",
+                  f"ultimi {years_text} anni (dal {report.split:%d/%m/%Y})", "costi reali inclusi"])
+    verdict_bar(report, tone, plain=f"{euro(amount)} sarebbero diventati {euro(final)}; comprando e tenendo "
+                                    f"{euro(final_bh)}. {SENTENCES[tone]}")
+    kpi_strip([
+        ("Capitale finale", euro(final), f"comprare e tenere {euro(final_bh)}", 1 if final > final_bh else -1),
+        ("Rendimento annuo", pct(m.loc["annual_return", "strategy"], True),
+         f"comprare e tenere {pct(m.loc['annual_return', 'buy_and_hold'], True)}", 0),
+        ("Calo massimo", pct(m.loc["max_drawdown", "strategy"]),
+         f"comprare e tenere {pct(m.loc['max_drawdown', 'buy_and_hold'])}", 0),
+        ("Tempo investito", pct(a["exposure"], decimals=0), "dei giorni di borsa", 0),
+        ("Operazioni", str(len(a["trades"])), f"in {years_text} anni", 0),
+    ])
 
     labels = {"strategy": idea, "buy_and_hold": "Comprare e tenere"}
-    st.altair_chart(comparison_chart(growth, labels, "Valore (€)", ",.0f"), width="stretch")
+    st.markdown(f"##### Come sarebbero cambiati {euro(amount)}")
+    chart(equity_chart(a["returns"], labels, start_value=amount, y_title="Valore (€)"))
 
-    day, value, since = current_signal(strategy(prices, **params))
-    with st.container(border=True):
-        state = "DENTRO" if value > 0 else "FUORI"
-        st.markdown(f'<div class="ql-tag">Oggi, con i prezzi del {day:%d/%m/%Y}</div>'
-                    f'<div class="ql-title">L\'idea dice: {state}</div>', unsafe_allow_html=True)
-        st.caption(
-            ("Cioè: essere investiti" if value > 0 else "Cioè: stare in contanti")
-            + f" su {asset}, così dal {since:%d/%m/%Y}. È il risultato dell'idea applicata ai prezzi di oggi, "
-            "non un consiglio di investimento."
-        )
+    left, right = st.columns([3, 2])
+    with left:
+        st.markdown("##### Anno per anno")
+        chart(annual_chart(a["returns"], labels))
+    with right:
+        st.markdown("##### Oggi")
+        day, value, since = current_signal(strategy(prices, **params))
+        signal_panel(asset, day, value, since, prices.iloc[-1], tone, who="L'idea")
+        st.button("Apri l'analisi completa", key="simple_open_advanced", on_click=_open_advanced,
+                  args=(ticker,), help="Stesso titolo nella vista Approfondita: rischio, operazioni, robustezza.")
 
     st.caption(
         f"Come è fatto il conto: {YEARS_OF_HISTORY} anni di prezzi giornalieri; il giudizio riguarda solo "
         "l'ultimo 30%, mai usato per scegliere niente. Costi reali inclusi: 0,10% di commissione e 0,05% "
-        "di slippage a ogni operazione; quando l'idea è fuori dal mercato i soldi rendono il 2% l'anno. "
-        "Per cambiare i parametri, scrivere regole tue e vedere tutte le statistiche, passa alla vista Approfondita."
+        "di slippage a ogni operazione; quando l'idea è fuori dal mercato i soldi rendono il 2% l'anno."
     )
 
     terms = NEWS_TERMS.get(ticker)

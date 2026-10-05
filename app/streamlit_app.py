@@ -22,10 +22,10 @@ from common import CSS  # noqa: E402
 st.set_page_config(page_title="Quantlab", layout="wide")
 st.markdown(CSS, unsafe_allow_html=True)
 
-st.title("Quantlab")
-st.caption(
-    "Prende un'idea di investimento, la prova sul passato con costi reali e ti dice onestamente "
-    "se avrebbe battuto il semplice comprare e tenere. Non è un consiglio di investimento."
+st.markdown(
+    '<div class="ql-brand"><b>Quantlab</b><span>Verifica storica di strategie di investimento: '
+    "costi reali, dati mai visti, controllo della fortuna. Non è un consiglio di investimento.</span></div>",
+    unsafe_allow_html=True,
 )
 view = st.radio("Vista", ["Semplice", "Approfondita"], key="view", horizontal=True, label_visibility="collapsed")
 

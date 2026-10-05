@@ -16,23 +16,40 @@ from quantlab.validation import param_grid
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
-# Small additions on top of .streamlit/config.toml.
-CSS = """
+# Small additions on top of .streamlit/config.toml: header, verdict, KPI strip, tables.
+INK, MUTED, LINE, SURFACE = "#14181f", "#5d6673", "#dfe3e8", "#ffffff"
+POS, NEG = "#127a4b", "#b42318"  # gains and losses only
+CSS = f"""
 <style>
-.ql-verdict { background:#ffffff; border:1px solid #d5d9d3; border-radius:4px; padding:18px 20px;
-              display:grid; gap:6px; margin-bottom:8px; }
-.ql-tag { font:500 0.72rem 'IBM Plex Mono', monospace; letter-spacing:0.08em; text-transform:uppercase;
-          color:#6b736c; }
-.ql-good .ql-tag { color:#2e6b4a; } .ql-bad .ql-tag { color:#9b2f2f; } .ql-neutral .ql-tag { color:#8a6a1c; }
-.ql-title { font:600 1.45rem 'IBM Plex Serif', serif; line-height:1.2; color:#1b232c; }
-.ql-big { font:600 2rem 'IBM Plex Serif', serif; line-height:1.15; color:#1b232c; }
-.ql-text { color:#4a535c; }
-.ql-facts { display:flex; flex-wrap:wrap; gap:8px 32px; margin:10px 0 0; padding-top:12px;
-            border-top:1px solid #e3e6e1; }
-.ql-facts div { min-width:0; }
-.ql-facts dt { font-size:0.75rem; color:#6b736c; }
-.ql-facts dd { margin:0; font:500 0.95rem 'IBM Plex Mono', monospace; overflow-wrap:anywhere; color:#1b232c; }
-[data-testid="stTable"] td { font-family:'IBM Plex Mono', monospace; font-variant-numeric:tabular-nums; }
+.block-container {{ padding-top: 2.2rem; max-width: 1400px; }}
+.ql-brand {{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }}
+.ql-brand b {{ font-size:1.25rem; letter-spacing:-0.01em; }}
+.ql-brand span {{ color:{MUTED}; font-size:0.85rem; }}
+.ql-context {{ color:{MUTED}; font-size:0.82rem; margin:2px 0 10px; }}
+.ql-context b {{ color:{INK}; font-weight:600; }}
+.ql-verdict {{ background:{SURFACE}; border:1px solid {LINE}; border-radius:4px; padding:14px 18px;
+               display:flex; gap:18px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }}
+.ql-pill {{ font:600 0.7rem 'Geist Mono', monospace; letter-spacing:0.06em; text-transform:uppercase;
+            padding:4px 8px; border-radius:3px; white-space:nowrap; }}
+.ql-good .ql-pill {{ background:#e3f3ea; color:{POS}; }}
+.ql-bad .ql-pill {{ background:#fbe7e5; color:{NEG}; }}
+.ql-neutral .ql-pill {{ background:#f3eedf; color:#7a5d12; }}
+.ql-verdict .ql-head {{ font-weight:600; font-size:1rem; }}
+.ql-verdict .ql-sub {{ color:{MUTED}; font-size:0.85rem; }}
+.ql-verdict .ql-stats {{ margin-left:auto; display:flex; gap:22px; flex-wrap:wrap; }}
+.ql-kpis {{ display:grid; grid-template-columns:repeat(var(--cols, 4), minmax(0, 1fr)); gap:1px;
+            background:{LINE}; border:1px solid {LINE}; border-radius:4px; overflow:hidden; margin-bottom:14px; }}
+.ql-kpi {{ padding:12px 16px; background:{SURFACE}; min-width:0; }}
+@media (max-width: 760px) {{ .ql-kpis {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }} }}
+.ql-label {{ font-size:0.72rem; color:{MUTED}; text-transform:uppercase; letter-spacing:0.05em; }}
+.ql-value {{ font:500 1.3rem 'Geist Mono', monospace; color:{INK}; margin-top:2px; white-space:nowrap; }}
+.ql-bench {{ font:400 0.75rem 'Geist Mono', monospace; color:{MUTED}; margin-top:2px; }}
+.ql-pos {{ color:{POS}; }} .ql-neg {{ color:{NEG}; }}
+.ql-signal {{ background:{SURFACE}; border:1px solid {LINE}; border-radius:4px; padding:14px 18px; }}
+.ql-signal .ql-state {{ font:600 1.5rem 'Geist Mono', monospace; }}
+[data-testid="stTable"] td, [data-testid="stTable"] th {{ font-size:0.82rem; }}
+[data-testid="stTable"] td {{ font-family:'Geist Mono', monospace; font-variant-numeric:tabular-nums; }}
+[data-testid="stTabs"] button p {{ font-size:0.85rem; font-weight:500; }}
 </style>
 """
 
@@ -114,10 +131,10 @@ def factor_note(name: str) -> str:
     return "Dato di mercato giornaliero: usato dal giorno stesso della chiusura."
 OPERATOR_LABELS = {">": "sopra (>)", "<": "sotto (<)", ">=": "sopra o uguale (≥)", "<=": "sotto o uguale (≤)"}
 
-COLORS = {"strategy": "#1f4e79", "buy_and_hold": "#b5762a"}  # ink blue vs ochre
+COLORS = {"strategy": "#1f4aa8", "buy_and_hold": "#9aa1ab"}  # strategy in cobalt, benchmark in grey
 # Vega-Lite expression: the year on January ticks, an Italian month abbreviation otherwise.
-MONTHS_IT = ("month(datum.value) == 0 ? year(datum.value) + '' : "
-             "['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'][month(datum.value)]")
+MONTHS_IT = ("['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'][month(datum.value)]"
+             " + ' ' + timeFormat(datum.value, '%y')")  # e.g. "ott 22"
 TIME_AXIS = alt.X("date:T", title=None, axis=alt.Axis(labelExpr=MONTHS_IT))
 # Italian number labels: swap the separators, 1,800.50 -> 1.800,50
 NUMBERS_IT = ("replace(replace(replace(datum.label, regexp(',', 'g'), '_'), "
@@ -207,7 +224,7 @@ def comparison_chart(table: pd.DataFrame, labels: dict, y_title: str, y_format: 
     long["series"] = long["series"].map(labels)
     return (
         alt.Chart(long)
-        .mark_line(strokeWidth=1.8)
+        .mark_line(strokeWidth=1.6)
         .encode(
             x=TIME_AXIS,
             y=alt.Y("value:Q", title=y_title, axis=alt.Axis(format=y_format, labelExpr=NUMBERS_IT), scale=alt.Scale(zero=False)),

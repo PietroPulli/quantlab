@@ -1,23 +1,24 @@
-# Look of the app: a sober research tool, not the default Streamlit template.
+# Look of the app: a dense, sober research terminal (models: TradingView strategy tester,
+# Portfolio Visualizer, pyfolio tear sheets), not the default Streamlit template.
 
 [theme]
 base = "light"
-primaryColor = "#1f4e79"            # ink blue: buttons, sliders, focus
-backgroundColor = "#f6f7f5"
-secondaryBackgroundColor = "#eceeea" # sidebar and input fields
-textColor = "#1b232c"
-borderColor = "#d5d9d3"
+primaryColor = "#1f4aa8"             # cobalt: buttons, sliders, the strategy line
+backgroundColor = "#f6f7f9"
+secondaryBackgroundColor = "#eceff3" # inputs and sidebar
+textColor = "#14181f"
+borderColor = "#dfe3e8"
 showWidgetBorder = true
-baseRadius = "small"
-font = "'IBM Plex Sans':https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap, sans-serif"
-headingFont = "'IBM Plex Serif':https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600&display=swap, serif"
-codeFont = "'IBM Plex Mono':https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap, monospace"
-headingFontSizes = ["2.1rem", "1.35rem", "1.1rem"]
-baseFontSize = 15
+baseRadius = "0.25rem"
+font = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap, sans-serif"
+codeFont = "'Geist Mono':https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap, monospace"
+headingFontSizes = ["1.6rem", "1.15rem", "0.95rem"]
+headingFontWeights = [600, 600, 600]
+baseFontSize = 14
 
 [theme.sidebar]
-backgroundColor = "#eceeea"
-secondaryBackgroundColor = "#f6f7f5"
+backgroundColor = "#eef0f4"
+secondaryBackgroundColor = "#ffffff"
 
 [client]
 toolbarMode = "viewer"  # hides the developer "Deploy" button for visitors

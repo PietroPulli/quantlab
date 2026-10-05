@@ -221,3 +221,12 @@ def test_trade_stats():
     assert stats["profit_factor"] == pytest.approx(0.30 / 0.10)
     assert stats["avg_days"] == 25
     assert trade_stats(trips.iloc[0:0])["trades"] == 0
+
+
+def test_round_trips_without_trades_is_an_empty_table():
+    idx = pd.bdate_range("2024-01-01", periods=4)
+    trips = round_trips(pd.Series(10.0, index=idx), pd.Series(0.0, index=idx))
+    assert trips.empty
+    assert list(trips.columns) == ["entry_date", "entry_price", "exit_date", "exit_price", "open",
+                                   "net_return", "days"]
+    assert trade_stats(trips)["trades"] == 0

@@ -66,7 +66,7 @@ def test_app_with_optimised_parameters_shows_walk_forward(fake_prices):
     at.sidebar.toggle[0].set_value(True).run()
     at.sidebar.button[0].click().run()
     assert not at.exception
-    assert any("Walk-forward" in s.value for s in at.subheader)
+    assert any("Walk-forward" in m.value for m in at.markdown)
 
 
 def test_app_rejects_invalid_parameters(fake_prices):
@@ -122,10 +122,11 @@ def test_app_cash_rate_changes_the_result(fake_prices):
     at = _advanced()
     at.number_input(key="cash_rate").set_value(0.0).run()
     at.sidebar.button[0].click().run()
-    zero = at.table[0].value.loc["Guadagno totale"].iloc[0]
+    kpis = lambda: next(m.value for m in at.markdown if "Rendimento totale" in m.value)  # noqa: E731
+    zero = kpis()
     at.number_input(key="cash_rate").set_value(5.0).run()
     assert not at.exception
-    assert at.table[0].value.loc["Guadagno totale"].iloc[0] != zero
+    assert kpis() != zero
 
 
 def test_app_shows_no_emoji(fake_prices):
@@ -138,7 +139,7 @@ def test_app_shows_no_emoji(fake_prices):
 def test_app_shows_what_the_rule_says_today(fake_prices):
     at = _advanced()
     at.sidebar.button[0].click().run()
-    assert any("Cosa dice la regola oggi" in h.value for h in at.subheader)
+    assert any("Segnale alla chiusura" in m.value for m in at.markdown)
     assert any("DENTRO" in m.value or "FUORI" in m.value for m in at.markdown)
     assert any("non un consiglio di investimento" in c.value for c in at.caption)
 
@@ -150,7 +151,7 @@ def test_simple_view_is_the_default_and_answers_in_euros(fake_prices):
     assert not at.exception
     text = " ".join(m.value for m in at.markdown)
     assert "1.000 € sarebbero diventati" in text
-    assert "L'idea dice:" in text or "L'idea dice:" in text
+    assert "L'idea dice di" in text
 
 
 @pytest.mark.parametrize("idea", ["Segui la tendenza", "Compra quando sfonda verso l'alto",
@@ -172,7 +173,7 @@ def test_simple_view_accepts_any_ticker(fake_prices):
     at.text_input(key="simple_ticker").set_value("msft").run()
     at.button(key="simple_run").click().run()
     assert not at.exception
-    assert any("su MSFT" in m.value for m in at.markdown)
+    assert any("<b>MSFT</b>" in m.value for m in at.markdown)
 
 
 def test_news_are_shown_as_context_only(fake_prices):
