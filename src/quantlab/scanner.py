@@ -12,11 +12,13 @@ from quantlab.backtest import current_signal
 from quantlab.report import evaluate_strategy
 from quantlab.validation import Strategy, confidence_interval
 
+
 def bonferroni_level(level: float, n_tests: int) -> float:
     """Confidence level each of `n_tests` tests needs so that the family keeps `level`."""
     if n_tests < 1:
         raise ValueError("n_tests must be >= 1")
     return 1 - (1 - level) / n_tests
+
 
 def scan(prices: pd.Series, ideas: dict[str, tuple[Strategy, dict]], cash_rate: float = 0.0,
          level: float = 0.95, n_bootstrap: int = 500, seed: int = 42) -> pd.DataFrame:
@@ -44,6 +46,7 @@ def scan(prices: pd.Series, ideas: dict[str, tuple[Strategy, dict]], cash_rate: 
     table = pd.DataFrame(rows)
     table.attrs["level"] = strict  # remembered for display
     return table
+
 
 def best_idea(table: pd.DataFrame) -> pd.Series | None:
     """The idea with the largest Sharpe gain among those that pass the corrected test, or None."""
