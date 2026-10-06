@@ -303,3 +303,18 @@ def test_scanner_refuses_a_test_period_without_one_year_of_history(fake_prices):
     at.slider(key="scan_share").set_value(90).run()  # 4 years x 10% = less than a year of history
     assert any("meno di 1 anno di storia" in w.value for w in at.warning)
     assert not at.table  # nothing analysed
+
+
+def test_demo_replay_runs_the_account_over_a_past_period(fake_prices):
+    import sys
+
+    sys.modules.pop("paper_view", None)  # default paper folder (an earlier test may have changed it)
+    at = AppTest.from_file(APP, default_timeout=180).run()
+    at.radio(key="view").set_value("Conto demo").run()
+    from datetime import date
+    at.date_input(key="replay_start").set_value(date(2019, 1, 2)).run()  # inside the fake prices (2015-2020)
+    at.date_input(key="replay_end").set_value(date(2020, 6, 30)).run()
+    at.button(key="replay_run").click().run()
+    assert not at.exception
+    assert any("Controllo backtest" in str(t.value.columns.tolist()) for t in at.table)
+    assert any("Rendimento" in m.value for m in at.markdown)

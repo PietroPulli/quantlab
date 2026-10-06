@@ -126,3 +126,29 @@ def test_the_real_account_config_is_valid():
     config = json.loads((Path(__file__).resolve().parents[1] / "paper" / "config.json").read_text(encoding="utf-8"))
     assert config["start_cash"] > 0 and config["commission"] > 0 and config["slippage"] > 0  # costs never zero
     assert all(slot["idea"] in IDEAS for slot in config["slots"])
+
+
+def test_replay_lives_each_night_without_seeing_the_future_and_matches_the_backtest():
+    import numpy as np
+
+    from quantlab.backtest import run_backtest
+    from quantlab.ideas import IDEAS
+    from quantlab.paper import replay
+
+    rng = np.random.default_rng(7)
+    idx = pd.bdate_range("2021-01-04", "2024-12-31")
+    prices = pd.Series(100 * np.exp(np.cumsum(rng.normal(0.0004, 0.012, len(idx)))), index=idx)
+    config = {"start_cash": 10_000, "commission": 0.001, "slippage": 0.0005, "cash_rate": 0.02,
+              "slots": [{"ticker": "AAA", "idea": "Segui la tendenza"}]}
+    state, trades, values, problems = replay(config, {"AAA": prices}, None, "2023-01-02", "2024-12-31")
+    assert problems == [] and state["start"] == "2023-01-02"
+    paper = pd.DataFrame(values).set_index("date")["value"]
+
+    # the same idea in the backtest engine, over the same days, starting flat
+    strategy, params = IDEAS["Segui la tendenza"].build("AAA", None)
+    period = prices[prices.index >= "2023-01-02"]
+    signals = strategy(prices, **params)[period.index]
+    equity = 10_000 * (1 + run_backtest(period, signals, 0.001, 0.0005, 0.02)["net_return"]).cumprod()
+    assert len(trades) > 2  # it really traded
+    # Paper applies costs multiplicatively, the backtest additively: they differ by cost x return, i.e. < 0.5%
+    assert paper.iloc[-1] == pytest.approx(equity.iloc[-1], rel=0.005)

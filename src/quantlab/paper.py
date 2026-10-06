@@ -140,3 +140,22 @@ def run_day(config: dict, state: dict | None, today: pd.Timestamp, get_prices, f
             problems.append(f"{slot.ticker} / {slot.idea}: {exc}")
         slots.append(slot)
     return {"start": state["start"], "slots": slots_to_records(slots)}, trades, values, problems
+
+
+def replay(config: dict, history: dict[str, pd.Series], factor, start: str, end: str) -> tuple[dict, list, list, list]:
+    """Run the nightly program on every night between `start` and `end`, as if living them.
+
+    Each night sees only the closes before that day (`history` is cut, never peeked at),
+    so the account goes through two years in seconds without knowing what comes next.
+    Returns (final state, trades, value rows, distinct problems).
+    """
+    def prices_until(today: pd.Timestamp):
+        return lambda ticker, _start: history[ticker][history[ticker].index < today]
+
+    state, trades, values, problems = None, [], [], []
+    for today in pd.date_range(pd.Timestamp(start) + pd.Timedelta(days=1), pd.Timestamp(end) + pd.Timedelta(days=1)):
+        state, new_trades, new_values, new_problems = run_day(config, state, today, prices_until(today), factor)
+        trades += new_trades
+        values += new_values
+        problems += [p for p in new_problems if p not in problems]
+    return state, trades, values, problems
