@@ -1,0 +1,50 @@
+{
+  "start": "2026-10-05",
+  "slots": [
+    {
+      "ticker": "SPY",
+      "idea": "Segui la tendenza",
+      "cash": 0.0,
+      "shares": 2.5773394886022363,
+      "bench_cash": 0.0,
+      "bench_shares": 2.5773394886022363,
+      "last_date": "2026-10-05"
+    },
+    {
+      "ticker": "QQQ",
+      "idea": "Compra quando sfonda verso l'alto",
+      "cash": 0.0,
+      "shares": 2.640835715106104,
+      "bench_cash": 0.0,
+      "bench_shares": 2.640835715106104,
+      "last_date": "2026-10-05"
+    },
+    {
+      "ticker": "FTSEMIB.MI",
+      "idea": "Segui la tendenza",
+      "cash": 0.0,
+      "shares": 0.03929709945294974,
+      "bench_cash": 0.0,
+      "bench_shares": 0.03929709945294974,
+      "last_date": "2026-10-05"
+    },
+    {
+      "ticker": "GC=F",
+      "idea": "Compra ci\u00f2 che \u00e8 salito nell'ultimo anno",
+      "cash": 0.0,
+      "shares": 0.4804176515183729,
+      "bench_cash": 0.0,
+      "bench_shares": 0.4804176515183729,
+      "last_date": "2026-10-05"
+    },
+    {
+      "ticker": "BTC-USD",
+      "idea": "Esci quando il mercato ha paura",
+      "cash": 0.0,
+      "shares": 0.023278695571241282,
+      "bench_cash": 0.0,
+      "bench_shares": 0.023278695571241282,
+      "last_date": "2026-10-05"
+    }
+  ]
+}

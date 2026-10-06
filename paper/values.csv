@@ -1,0 +1,6 @@
+date,ticker,idea,position,value,bench_value
+2026-10-05,SPY,Segui la tendenza,1,1996.9999999999998,1996.9999999999998
+2026-10-05,QQQ,Compra quando sfonda verso l'alto,1,1997.0,1997.0
+2026-10-05,FTSEMIB.MI,Segui la tendenza,1,1997.0,1997.0
+2026-10-05,GC=F,Compra ciò che è salito nell'ultimo anno,1,1997.0,1997.0
+2026-10-05,BTC-USD,Esci quando il mercato ha paura,1,1997.0,1997.0

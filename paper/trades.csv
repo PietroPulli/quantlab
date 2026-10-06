@@ -1,0 +1,6 @@
+date,ticker,idea,price,action,shares,value,cost
+2026-10-05,SPY,Segui la tendenza,774.8300170898438,buy,2.5773394886022363,2000.0,3.0
+2026-10-05,QQQ,Compra quando sfonda verso l'alto,756.2000122070312,buy,2.640835715106104,2000.0,3.0
+2026-10-05,FTSEMIB.MI,Segui la tendenza,50818.0,buy,0.03929709945294974,2000.0,3.0
+2026-10-05,GC=F,Compra ciò che è salito nell'ultimo anno,4156.7998046875,buy,0.4804176515183729,2000.0,3.0
+2026-10-05,BTC-USD,Esci quando il mercato ha paura,85786.59375,buy,0.023278695571241282,2000.0,3.0
