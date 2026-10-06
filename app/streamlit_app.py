@@ -20,6 +20,7 @@ sys.path.insert(0, str(APP_DIR))  # so the views can `import common`
 sys.path.insert(0, str(APP_DIR.parent / "src"))
 
 import advanced  # noqa: E402
+import scanner_view  # noqa: E402
 import simple  # noqa: E402
 from common import CSS  # noqa: E402
 
@@ -31,9 +32,6 @@ st.markdown(
     "costi reali, dati mai visti, controllo della fortuna. Non è un consiglio di investimento.</span></div>",
     unsafe_allow_html=True,
 )
-view = st.radio("Vista", ["Semplice", "Approfondita"], key="view", horizontal=True, label_visibility="collapsed")
-
-if view == "Semplice":
-    simple.render()
-else:
-    advanced.render()
+VIEWS = {"Semplice": simple.render, "Approfondita": advanced.render, "Scanner": scanner_view.render}
+view = st.radio("Vista", list(VIEWS), key="view", horizontal=True, label_visibility="collapsed")
+VIEWS[view]()

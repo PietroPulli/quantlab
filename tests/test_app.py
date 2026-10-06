@@ -222,3 +222,16 @@ def test_simple_view_explains_when_an_idea_does_not_apply(fake_prices, monkeypat
     at.button(key="simple_run").click().run()
     assert not at.exception
     assert any("non si può applicare" in e.value for e in at.error)
+
+
+def test_scanner_view_lists_every_asset_with_a_corrected_verdict(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    at.radio(key="view").set_value("Scanner").run()
+    at.multiselect(key="scan_assets").set_value(["Apple", "Bitcoin"]).run()
+    at.text_input(key="scan_extra").set_value("msft").run()
+    at.button(key="scan_run").click().run()
+    assert not at.exception
+    summary = at.table[0].value
+    assert list(summary.index) == ["Apple", "Bitcoin", "MSFT"]
+    assert set(summary["Idee provate"]) <= {7, 8}  # earnings may not apply
+    assert any("intervallo richiesto" in m.value for m in at.markdown)
