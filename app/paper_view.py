@@ -28,15 +28,15 @@ def render() -> None:
     slots = pd.DataFrame(config["slots"])
     st.caption(
         f"Capitale iniziale {euro(config['start_cash'])}, diviso in parti uguali tra {len(slots)} scomparti. "
-        "Ogni sera, dopo la chiusura di Wall Street, un programma automatico su GitHub legge i prezzi di chiusura, "
+        "Ogni notte un programma automatico su GitHub legge i prezzi di chiusura del giorno prima, "
         "applica le idee e registra acquisti e vendite con costi reali "
         f"({pct(config['commission'] + config['slippage'], decimals=2)} per operazione). Accanto, lo stesso "
         "capitale in compra e tieni sugli stessi titoli, per un confronto onesto."
     )
 
     if values.empty or not state_path.exists():
-        st.info("Il conto non ha ancora registrato una chiusura: parte con la prima esecuzione serale "
-                "(22:30 UTC, circa le 00:30 in Italia). Ecco come è configurato:")
+        st.info("Il conto non ha ancora registrato una chiusura: parte con la prima esecuzione notturna "
+                "(01:00 UTC, le 3:00 in Italia), sui prezzi di chiusura del giorno prima. Ecco come è configurato:")
         st.table(slots.rename(columns={"ticker": "Titolo", "idea": "Idea"}).set_index("Titolo"))
         return
 

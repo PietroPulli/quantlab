@@ -1,10 +1,10 @@
-# Evening run of the paper (virtual money) account: after the US close, every day
-# (crypto trades at weekends too). Commits the updated paper/ files back to the repository.
+# Nightly run of the paper (virtual money) account, every day (crypto trades at weekends too).
+# At 01:00 UTC the previous day is over on every market used. Commits paper/ back to the repo.
 name: paper-account
 
 on:
   schedule:
-    - cron: "30 22 * * *"  # 22:30 UTC
+    - cron: "0 1 * * *"  # 01:00 UTC = 03:00 in Italy (02:00 in winter)
   workflow_dispatch:  # also runnable by hand from the Actions tab
 
 permissions:

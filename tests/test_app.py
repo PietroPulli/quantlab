@@ -247,7 +247,7 @@ def test_demo_account_before_the_first_run_explains_when_it_starts(fake_prices, 
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.radio(key="view").set_value("Conto demo").run()
     assert not at.exception
-    assert any("prima esecuzione serale" in i.value for i in at.info)
+    assert any("prima esecuzione notturna" in i.value for i in at.info)
 
 
 def test_demo_account_shows_value_slots_and_trades(fake_prices, tmp_path, monkeypatch):

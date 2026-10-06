@@ -1,4 +1,4 @@
-"""Evening run of the paper account: python scripts/paper_trade.py
+"""Nightly run of the paper account: python scripts/paper_trade.py
 
 Reads paper/config.json and paper/state.json, processes the new closes, appends to
 paper/trades.csv and paper/values.csv, saves the new state. Run every evening by

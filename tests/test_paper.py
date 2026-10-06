@@ -67,12 +67,12 @@ def test_advance_starts_at_start_and_never_repeats_a_day():
     assert more_trades == [] and more_values == []  # same data twice: nothing new
 
 
-def test_completed_closes_drops_todays_crypto_bar_only():
-    idx = pd.date_range("2026-10-03", periods=4)  # Sat..Tue, crypto trades every day
-    prices = pd.Series([1.0, 2, 3, 4], index=idx)
-    today = pd.Timestamp("2026-10-06")
-    assert completed_closes(prices, today, trades_every_day=True).index[-1] == pd.Timestamp("2026-10-05")
-    assert completed_closes(prices, today, trades_every_day=False).index[-1] == today
+def test_completed_closes_never_uses_todays_bar():
+    # Run in the morning, Milan is open: today's "close" would be an intraday price.
+    idx = pd.bdate_range("2026-10-02", periods=3)  # Fri, Mon, Tue
+    prices = pd.Series([1.0, 2, 3], index=idx)
+    kept = completed_closes(prices, pd.Timestamp("2026-10-06"))
+    assert kept.index[-1] == pd.Timestamp("2026-10-05")
 
 
 def test_portfolio_history_carries_values_over_other_calendars():
@@ -104,13 +104,13 @@ def test_run_day_creates_the_account_then_only_adds_new_closes():
             raise ValueError("no data")
         return trend[trend.index <= today]
 
-    today = pd.Timestamp("2026-10-07")
+    today = pd.Timestamp("2026-10-08")  # night run: the last completed close is 7 October
     state, trades, values, problems = run_day(config, None, today, get_prices, factor=None)
-    assert state["start"] == "2026-10-07"
+    assert state["start"] == "2026-10-07"  # the account starts with the first completed close
     assert [t["action"] for t in trades] == ["buy"]  # rising market: above its 200-day average
     assert len(values) == 1 and problems == ["XXX / Segui la tendenza: no data"]
 
-    today = pd.Timestamp("2026-10-09")
+    today = pd.Timestamp("2026-10-10")
     state, trades, values, _ = run_day(config, state, today, get_prices, factor=None)
     assert trades == []  # already invested
     assert [v["date"] for v in values] == ["2026-10-08", "2026-10-09"]

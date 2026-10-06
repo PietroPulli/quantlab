@@ -1,7 +1,7 @@
 """Paper trading: a virtual account that follows the ideas day by day, going forward.
 
-The capital is split in equal "slots", one per (ticker, idea). Each evening, for every
-new close, a slot follows its idea's signal: fully invested or fully in cash, trading at
+The capital is split in equal "slots", one per (ticker, idea). Each night, for every
+new completed close, a slot follows its idea's signal: fully invested or fully in cash, trading at
 that close and paying commission + slippage, exactly like the backtest. Next to it, a
 buy & hold slot on the same ticker buys on the first day and never trades: the honest
 benchmark. Running twice on the same data changes nothing (dates already processed are skipped).
@@ -79,11 +79,13 @@ def advance(slot: Slot, prices: pd.Series, signals: pd.Series, start: str, cost:
     return slot, trades, values
 
 
-def completed_closes(prices: pd.Series, today: pd.Timestamp, trades_every_day: bool) -> pd.Series:
-    """Drop today's bar for markets open around the clock: it is not a close yet."""
-    if trades_every_day and len(prices) and prices.index[-1].normalize() >= today.normalize():
-        return prices[prices.index.normalize() < today.normalize()]
-    return prices
+def completed_closes(prices: pd.Series, today: pd.Timestamp) -> pd.Series:
+    """Only days that are over: today's bar may be an intraday price, not a close.
+
+    Run after midnight UTC, every market's previous day is final (Milan, Wall Street,
+    gold futures, and the crypto daily bar that ends at 00:00 UTC).
+    """
+    return prices[prices.index.normalize() < today.normalize()]
 
 
 def portfolio_history(values: pd.DataFrame) -> pd.DataFrame:
@@ -117,8 +119,8 @@ def run_day(config: dict, state: dict | None, today: pd.Timestamp, get_prices, f
     from quantlab.ideas import IDEAS
     from quantlab.metrics import infer_periods_per_year
 
-    if state is None:  # first run: the account starts today
-        state = {"start": today.date().isoformat(),
+    if state is None:  # first run: the account starts with yesterday's (first completed) close
+        state = {"start": (today - pd.Timedelta(days=1)).date().isoformat(),
                  "slots": slots_to_records(new_slots(config["slots"], config["start_cash"]))}
     cost = config["commission"] + config["slippage"]
     history_from = (pd.Timestamp(state["start"]) - pd.DateOffset(years=3)).date().isoformat()  # for the indicators
@@ -127,7 +129,7 @@ def run_day(config: dict, state: dict | None, today: pd.Timestamp, get_prices, f
         try:
             prices = get_prices(slot.ticker, history_from).dropna()
             ppy = infer_periods_per_year(prices.index)
-            prices = completed_closes(prices, today, trades_every_day=ppy == 365)
+            prices = completed_closes(prices, today)
             strategy, params = IDEAS[slot.idea].build(slot.ticker, factor)
             signals = strategy(prices, **params)
             daily_cash = (1 + config["cash_rate"]) ** (1 / ppy) - 1
