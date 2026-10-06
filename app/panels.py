@@ -159,11 +159,11 @@ def _long(table: pd.DataFrame, labels: dict) -> pd.DataFrame:
 
 
 def equity_chart(returns: pd.DataFrame, labels: dict, start_value: float = 1.0, log: bool = False,
-                 y_title: str = "Valore di 1 €") -> alt.Chart:
+                 y_title: str = "Valore di 1 €", height: int = 320) -> alt.Chart:
     data = _long(start_value * (1 + returns).cumprod(), labels)
     y = alt.Y("value:Q", title=y_title, scale=alt.Scale(type="log" if log else "linear", zero=False),
               axis=alt.Axis(labelExpr=NUMBERS_IT, format=",.2f" if start_value == 1 else ",.0f"))
-    return (alt.Chart(data, height=320).mark_line(strokeWidth=1.6)
+    return (alt.Chart(data, height=height).mark_line(strokeWidth=1.6)
             .encode(x=TIME_AXIS, y=y, color=_series_color(labels),
                     tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("series:N", title="Serie"),
                              alt.Tooltip("value:Q", title=y_title, format=",.2f")]))
@@ -180,11 +180,11 @@ def drawdown_chart(returns: pd.DataFrame, labels: dict) -> alt.Chart:
     return area + bench
 
 
-def annual_chart(returns: pd.DataFrame, labels: dict) -> alt.Chart:
+def annual_chart(returns: pd.DataFrame, labels: dict, height: int = 260) -> alt.Chart:
     table = pd.DataFrame({c: calendar_returns(returns[c]) for c in returns})
     data = table.rename_axis("year").reset_index().melt("year", var_name="series", value_name="value")
     data["series"] = data["series"].map(labels)
-    return (alt.Chart(data, height=260).mark_bar()
+    return (alt.Chart(data, height=height).mark_bar()
             .encode(x=alt.X("year:O", title=None, axis=alt.Axis(labelAngle=0)), xOffset="series:N",
                     y=alt.Y("value:Q", title="Rendimento", axis=alt.Axis(format=".0%", labelExpr=NUMBERS_IT)),
                     color=_series_color(labels),
@@ -325,11 +325,8 @@ def signal_panel(ticker: str, day_, value: float, since, last_price: float, tone
         f'<div class="ql-sub">{who} dice di {meaning} <b>{html.escape(ticker)}</b>, ininterrottamente dal '
         f'{since:%d/%m/%Y} (ultima chiusura {num(last_price)}). Il segnale vale dalla seduta successiva.</div></div>',
         unsafe_allow_html=True)
-    st.caption(
-        "È il risultato della regola applicata ai prezzi di oggi, non un consiglio di investimento. "
-        "Quanto fidarsi della regola lo dice il verdetto"
-        + (": e qui non ha battuto il compra e tieni." if tone != "good" else ".")
-    )
+    st.caption("Regola applicata ai prezzi di oggi: non un consiglio di investimento."
+               + ("" if tone == "good" else " Sul passato non ha battuto il compra e tieni."))
 
 
 def chart(c: alt.Chart) -> None:
@@ -337,7 +334,7 @@ def chart(c: alt.Chart) -> None:
     st.altair_chart(c.properties(background="transparent").configure_view(strokeWidth=0)
                     .configure_axis(labelColor=MUTED, titleColor=MUTED, gridColor="#1b2129", domainColor=LINE,
                                     tickColor=LINE, labelFont="Geist", titleFont="Geist", titleFontWeight=500)
-                    .configure_legend(labelColor=INK, labelFont="Geist"),
+                    .configure_legend(labelColor=INK, labelFont="Geist", padding=0, offset=6, labelFontSize=11),
                     width="stretch")
 
 
@@ -417,9 +414,9 @@ def ma_legend(averages: tuple[int, ...] = (50, 200), with_trades: bool = False) 
     st.markdown('<div class="ql-context">' + " &nbsp; ".join(items) + "</div>", unsafe_allow_html=True)
 
 
-def watchlist(rows: list[dict], active: str) -> None:
+def watchlist(rows: list[dict], active: str = "", title: str = "Watchlist") -> None:
     """Broker-style list: name, ticker, last price and day change. rows: name, ticker, last, change."""
-    body = ['<div class="ql-watch"><div class="ql-watch-head">Watchlist · ultima chiusura</div>']
+    body = [f'<div class="ql-watch ql-mini"><div class="ql-watch-head">{html.escape(title)}</div>']
     for r in rows:
         cls = "ql-pos" if r["change"] >= 0 else "ql-neg"
         act = " ql-active" if r["name"] == active else ""

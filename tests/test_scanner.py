@@ -56,3 +56,10 @@ def test_scan_reports_what_each_idea_says_today():
     table = scan(_trending_regimes(), {"trend": TREND, "hold": HOLD}, n_bootstrap=100)
     assert set(table["signal_today"]) <= {0.0, 1.0}
     assert table.set_index("idea").loc["hold", "signal_today"] == 1.0
+
+
+def test_scan_remembers_the_periods_it_used():
+    prices = _trending_regimes()
+    table = scan(prices, {"hold": HOLD}, n_bootstrap=50)
+    assert table.attrs["history"] == (prices.index[0], prices.index[-1])
+    assert prices.index[0] < table.attrs["test_start"] < prices.index[-1]

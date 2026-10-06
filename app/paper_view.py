@@ -20,6 +20,17 @@ def _read(name: str) -> pd.DataFrame:
     return pd.read_csv(path) if path.exists() else pd.DataFrame()
 
 
+def summary() -> dict | None:
+    """Current value of the demo account and of its buy & hold twin, or None before the first run."""
+    values = _read("values.csv")
+    if values.empty:
+        return None
+    history = portfolio_history(values)
+    start = json.loads((PAPER_DIR / "state.json").read_text(encoding="utf-8"))["start"]
+    return {"value": history["value"].iloc[-1], "bench": history["bench_value"].iloc[-1],
+            "date": pd.Timestamp(history.index[-1]), "start": pd.Timestamp(start)}
+
+
 def render() -> None:
     st.subheader("Conto demo: le idee alla prova dal vivo, con soldi finti")
     config = json.loads((PAPER_DIR / "config.json").read_text(encoding="utf-8"))

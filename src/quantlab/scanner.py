@@ -45,6 +45,8 @@ def scan(prices: pd.Series, ideas: dict[str, tuple[Strategy, dict]], cash_rate: 
         })
     table = pd.DataFrame(rows)
     table.attrs["level"] = strict  # remembered for display
+    table.attrs["history"] = (prices.index[0], prices.index[-1])  # data used
+    table.attrs["test_start"] = report.split if rows else None  # first day of the judged period
     return table
 
 

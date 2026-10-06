@@ -1,5 +1,6 @@
 """Pieces shared by the simple and the advanced view: style, strategies, prices, charts."""
 
+import html
 from datetime import date
 from pathlib import Path
 
@@ -73,6 +74,18 @@ CSS = f"""
 .ql-watch-row .ql-num {{ font:500 0.8rem 'Geist Mono', monospace; text-align:right; }}
 .ql-watch-head {{ padding:8px 12px; font-size:0.68rem; color:{MUTED}; text-transform:uppercase;
                   letter-spacing:0.06em; border-bottom:1px solid {LINE}; }}
+/* density: less air between blocks, section titles as terminal panel headers */
+[data-testid="stVerticalBlock"] {{ gap:0.55rem; }}
+[data-testid="stMarkdownContainer"] h5 {{ font-size:0.7rem !important; font-weight:600 !important; color:{MUTED} !important;
+    text-transform:uppercase; letter-spacing:0.08em; padding:10px 0 6px !important; margin:0 !important;
+    border-bottom:1px solid {LINE}; }}
+[data-testid="stCaptionContainer"] {{ font-size:0.76rem; }}
+.ql-mini {{ margin-top:10px; }}
+.ql-news-row {{ padding:9px 12px; border-bottom:1px solid {LINE}; font-size:0.8rem; line-height:1.35; }}
+.ql-news-row:last-child {{ border-bottom:none; }}
+.ql-news-row a {{ color:{INK} !important; text-decoration:none; }}
+.ql-news-row a:hover {{ color:#ffffff !important; text-decoration:underline; }}
+.ql-news-row small {{ display:block; margin-top:3px; color:{MUTED}; font-size:0.7rem; }}
 /* tables and tabs */
 [data-testid="stTable"] td, [data-testid="stTable"] th {{ font-size:0.8rem; }}
 [data-testid="stTable"] td {{ font-family:'Geist Mono', monospace; font-variant-numeric:tabular-nums; }}
@@ -219,22 +232,25 @@ def show_news(query: str, terms: list[str] | None = None) -> None:
     With `terms`, only headlines that name the asset are shown (a search also returns
     stories about other companies). Without, the raw search results are shown, saying so.
     """
-    st.subheader("Ultime notizie")
     try:
         found = _news(query)
     except Exception:  # news are optional: never break the page for them
         found = []
     news = data.relevant_news(found, terms)[:5] if terms else found[:5]
-    if not news:
-        st.caption(f"Nessuna notizia recente che parli direttamente di {terms[0] if terms else query}.")
-    elif not terms:
-        st.caption(f"Risultati della ricerca «{query}» su Yahoo Finance: non tutti riguardano direttamente il titolo.")
+    rows = []
     for item in news:
         when = item["published"].tz_convert("Europe/Rome").strftime("%d/%m %H:%M")
-        st.markdown(f"[{item['title']}]({item['link']})<br><span style='color:#6b736c;font-size:0.8rem'>"
-                    f"{item['publisher']} · {when}</span>", unsafe_allow_html=True)
-    st.caption("Solo contesto: le notizie non entrano nei calcoli. Non esiste un archivio gratuito di notizie "
-               "datate con cui verificare onestamente se una regola basata sulle notizie avrebbe funzionato.")
+        rows.append(f'<div class="ql-news-row"><a href="{html.escape(item["link"])}" target="_blank">'
+                    f'{html.escape(item["title"])}</a><small>{html.escape(item["publisher"])} · {when}</small></div>')
+    if not news:
+        empty = f"Nessuna notizia recente su {terms[0] if terms else query}."
+        rows.append(f'<div class="ql-news-row"><small>{html.escape(empty)}</small></div>')
+    st.markdown('<div class="ql-watch ql-mini"><div class="ql-watch-head">Notizie</div>' + "".join(rows) + "</div>",
+                unsafe_allow_html=True)
+    if news and not terms:
+        st.caption(f"Ricerca «{query}» su Yahoo Finance: non tutte riguardano direttamente il titolo.")
+    st.caption("Solo contesto: le notizie non entrano nei calcoli (non esiste un archivio gratuito di notizie "
+               "datate per testarle).")
 
 
 @st.cache_data(show_spinner=False, ttl=3600)

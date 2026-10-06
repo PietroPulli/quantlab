@@ -69,10 +69,14 @@ def render() -> None:
         })
     progress.empty()
 
-    level = next(iter(details.values()))[0].attrs["level"] if details else 0.95
-    context_line([f"<b>{len(tickers)}</b> titoli", f"<b>{len(IDEAS)}</b> idee per titolo",
-                  f"intervallo richiesto <b>{pct(level)}</b> invece di 95%", "periodo di prova: ultimi anni",
-                  "costi reali inclusi"])
+    first = next(iter(details.values()))[0].attrs if details else {"level": 0.95}
+    period = []
+    if "history" in first:
+        start, end = first["history"]
+        period = [f"storia {start:%d/%m/%Y} – {end:%d/%m/%Y}",
+                  f"giudizio sul periodo di prova dal <b>{first['test_start']:%d/%m/%Y}</b> (ultimo 30%)"]
+    context_line([f"<b>{len(tickers)}</b> titoli", f"<b>{len(IDEAS)}</b> idee per titolo", *period,
+                  f"intervallo richiesto <b>{pct(first['level'])}</b> invece di 95%", "costi inclusi"])
     summary = pd.DataFrame(rows).set_index("Titolo")
     st.table(summary)
     found = (summary["Idea con vantaggio dimostrato"] != "nessuna").sum()

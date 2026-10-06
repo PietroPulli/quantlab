@@ -5,11 +5,13 @@ from datetime import date
 
 import streamlit as st
 
+import paper_view
 from common import app_factor, get_ohlcv, quotes, show_news, verdict_tone
 from panels import (
     RANGES,
     analyse,
     annual_chart,
+    annual_table,
     candle_chart,
     chart,
     context_line,
@@ -60,11 +62,16 @@ NEWS_TERMS = {
 }
 
 SENTENCES = {  # tone -> the verdict in plain words
-    "good": "Questa idea ha battuto il semplice comprare e tenere, e il vantaggio non sembra dovuto alla fortuna.",
-    "bad": "Questa idea ha fatto chiaramente peggio del semplice comprare e tenere.",
-    "neutral": "Non c'è prova che questa idea sia meglio del semplice comprare e tenere: "
-               "la differenza potrebbe essere solo fortuna.",
+    "good": "Vantaggio sul compra e tieni che regge al test della fortuna.",
+    "bad": "Peggio del compra e tieni, e non per sfortuna.",
+    "neutral": "Differenza compatibile con la fortuna.",
 }
+MARKETS = (("VIX", "^VIX"), ("Tasso USA 10 anni", "^TNX"), ("Dollaro (DXY)", "DX-Y.NYB"),
+           ("Petrolio WTI", "CL=F"), ("EUR / USD", "EURUSD=X"))
+
+
+def _open_demo() -> None:
+    st.session_state.view = "Conto demo"
 
 
 def _open_advanced(ticker: str) -> None:
@@ -91,7 +98,11 @@ def render() -> None:
                                    help="Lo trovi cercando il nome su finance.yahoo.com, es. ENI.MI o MSFT.")
             ticker = asset = ticker.strip().upper()
         listed = tuple((short(n), t) for n, t in ASSETS.items() if t)
-        watchlist(quotes(listed), active=short(asset))
+        watchlist(quotes(listed), active=short(asset), title="Watchlist")
+        watchlist(quotes(MARKETS), title="Mercati")
+        _demo_box()
+        terms = NEWS_TERMS.get(ticker)
+        show_news(terms[0] if terms else ticker, terms)
 
     with main:
         try:
@@ -113,19 +124,13 @@ def render() -> None:
         if c3.button("Verifica l'idea", type="primary", key="simple_run", width="stretch"):
             st.session_state.simple_started = True
         st.caption(IDEAS[idea].explanation)
-
         result = _test_idea(asset, ticker, idea, amount, ohlcv["Close"]) if st.session_state.get("simple_started") \
             else None
         with chart_box:
             chart(candle_chart(ohlcv, days, trades=result["trades"] if result else None))
             ma_legend(with_trades=result is not None)
-        if result is None:
-            st.caption("Scegli un'idea e premi Verifica: la risposta arriva in pochi secondi.")
-        else:
+        if result is not None:
             _show_result(asset, ticker, idea, amount, **result)
-
-    terms = NEWS_TERMS.get(ticker)
-    show_news(terms[0] if terms else ticker, terms)
 
 
 def _test_idea(asset: str, ticker: str, idea: str, amount: float, prices) -> dict | None:
@@ -145,6 +150,22 @@ def _test_idea(asset: str, ticker: str, idea: str, amount: float, prices) -> dic
     return {"report": report, "a": a, "trades": a["trades"], "signal": signal, "last_price": prices.iloc[-1]}
 
 
+def _demo_box() -> None:
+    """Side panel: the demo account at a glance, with a link to its page."""
+    info = paper_view.summary()
+    if info is None:
+        return
+    diff = info["value"] - info["bench"]
+    cls = "ql-pos" if diff >= 0 else "ql-neg"
+    st.markdown(
+        f'<div class="ql-watch ql-mini"><div class="ql-watch-head">Conto demo · dal {info["start"]:%d/%m}</div>'
+        f'<div class="ql-watch-row"><div><b>Strategie</b><small>al {info["date"]:%d/%m/%Y}</small></div>'
+        f'<div class="ql-num">{euro(info["value"])}</div><div class="ql-num {cls}">{euro(diff)}</div></div>'
+        f'<div class="ql-watch-row"><div><b>Compra e tieni</b><small>stessi titoli</small></div>'
+        f'<div class="ql-num">{euro(info["bench"])}</div><div></div></div></div>', unsafe_allow_html=True)
+    st.button("Apri il conto demo", key="simple_open_demo", on_click=_open_demo, width="stretch")
+
+
 def _show_result(asset, ticker, idea, amount, report, a, trades, signal, last_price) -> None:
     growth = amount * (1 + a["returns"]).cumprod()
     final, final_bh = growth["strategy"].iloc[-1], growth["buy_and_hold"].iloc[-1]
@@ -153,34 +174,50 @@ def _show_result(asset, ticker, idea, amount, report, a, trades, signal, last_pr
     years_text = num(a["years"], 1)
 
     context_line([f"<b>{html.escape(short(asset))}</b>", f"<b>{html.escape(idea)}</b>",
-                  f"ultimi {years_text} anni (dal {report.split:%d/%m/%Y})", "costi reali inclusi"])
-    verdict_bar(report, tone, plain=f"{euro(amount)} sarebbero diventati {euro(final)}; comprando e tenendo "
-                                    f"{euro(final_bh)}. {SENTENCES[tone]}")
+                  f"periodo di prova {report.split:%d/%m/%Y} – oggi ({years_text} anni)", "costi inclusi"])
+    verdict_bar(report, tone, plain=f"{euro(amount)} sarebbero diventati {euro(final)}, "
+                                    f"con il compra e tieni {euro(final_bh)}. {SENTENCES[tone]}")
     kpi_strip([
-        ("Capitale finale", euro(final), f"compra e tieni {euro(final_bh)}", 1 if final > final_bh else -1),
+        ("Capitale finale", euro(final), f"B&H {euro(final_bh)}", 1 if final > final_bh else -1),
         ("Rendimento annuo", pct(m.loc["annual_return", "strategy"], True),
-         f"compra e tieni {pct(m.loc['annual_return', 'buy_and_hold'], True)}", 0),
-        ("Calo massimo", pct(m.loc["max_drawdown", "strategy"]),
-         f"compra e tieni {pct(m.loc['max_drawdown', 'buy_and_hold'])}", 0),
+         f"B&H {pct(m.loc['annual_return', 'buy_and_hold'], True)}", 0),
+        ("Calo massimo", pct(m.loc["max_drawdown", "strategy"]), f"B&H {pct(m.loc['max_drawdown', 'buy_and_hold'])}", 0),
         ("Tempo investito", pct(a["exposure"], decimals=0), "dei giorni di borsa", 0),
         ("Operazioni", str(len(a["trades"])), f"in {years_text} anni", 0),
     ])
 
     labels = {"strategy": idea, "buy_and_hold": "Compra e tieni"}
-    left, right = st.columns([3, 2])
+    left, right = st.columns([3, 2], gap="medium")
     with left:
-        st.markdown(f"##### Come sarebbero cambiati {euro(amount)}")
-        chart(equity_chart(a["returns"], labels, start_value=amount, y_title="Valore (€)"))
-        st.markdown("##### Anno per anno")
-        chart(annual_chart(a["returns"], labels))
+        st.markdown(f"##### Valore di {euro(amount)}")
+        chart(equity_chart(a["returns"], labels, start_value=amount, y_title="", height=420))
     with right:
-        st.markdown("##### Oggi")
+        st.markdown("##### Segnale di oggi")
         day, value, since = signal
         signal_panel(short(asset), day, value, since, last_price, tone, who="L'idea")
-        st.button("Apri l'analisi completa", key="simple_open_advanced", on_click=_open_advanced,
-                  args=(ticker,), help="Stesso titolo nella vista Approfondita: rischio, operazioni, robustezza.")
-        st.caption(
-            f"Come è fatto il conto: {YEARS_OF_HISTORY} anni di prezzi giornalieri; il giudizio riguarda solo "
-            "l'ultimo 30%, mai usato per scegliere niente. Costi reali inclusi: 0,10% di commissione e 0,05% "
-            "di slippage a ogni operazione; quando l'idea è fuori dal mercato i soldi rendono il 2% l'anno."
-        )
+        stats, last = a["stats"], a["trades"]
+        last_trade = (f'{"Acquisto" if last["action"].iloc[-1] == "buy" else "Vendita"} '
+                      f'{last.index[-1]:%d/%m/%Y}') if len(last) else "nessuna"
+        rows = [("Operazioni chiuse", str(stats["trades"])), ("Vincenti", pct(stats["win_rate"], decimals=0)),
+                ("Guadagno medio", pct(stats["avg_win"], True)), ("Perdita media", pct(stats["avg_loss"], True)),
+                ("Durata media", f'{num(stats["avg_days"], 0)} giorni'), ("Ultima operazione", last_trade)]
+        st.markdown('<div class="ql-watch ql-mini"><div class="ql-watch-head">Operazioni nel periodo di prova</div>'
+                    + "".join(f'<div class="ql-watch-row"><div>{k}</div><div></div><div class="ql-num">{v}</div></div>'
+                              for k, v in rows) + "</div>", unsafe_allow_html=True)
+        st.button("Analisi completa", key="simple_open_advanced", on_click=_open_advanced, args=(ticker,),
+                  width="stretch", help="Stesso titolo nella vista Approfondita: rischio, operazioni, robustezza.")
+    left, right = st.columns([3, 2], gap="medium")
+    with left:
+        st.markdown("##### Rendimento per anno")
+        chart(annual_chart(a["returns"], labels, height=150))
+    with right:
+        st.markdown("##### Tabella annuale")
+        st.table(annual_table(a["returns"], labels))
+    with st.expander("Come è calcolato"):
+        st.markdown(
+            f"- {YEARS_OF_HISTORY} anni di prezzi giornalieri; il giudizio usa solo l'ultimo 30%, mai usato per "
+            "scegliere niente.\n"
+            "- Ogni operazione paga 0,10% di commissione e 0,05% di slippage; fuori dal mercato i soldi "
+            "rendono il 2% annuo.\n"
+            "- «Differenza compatibile con la fortuna»: rimescolando 1.000 volte la storia (bootstrap), "
+            "il vantaggio non è stabilmente sopra zero.")
