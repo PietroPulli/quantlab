@@ -55,13 +55,15 @@ def render() -> None:
         try:
             table, skipped = _scan_asset(ticker, str(date.today()))
         except Exception as exc:  # unknown ticker, too little history, network
-            rows.append({"Titolo": label, "Idea con vantaggio dimostrato": f"errore: {exc}"[:80],
+            rows.append({"Titolo": label, "Periodo di prova": "", "Idea con vantaggio dimostrato": f"errore: {exc}"[:80],
                          "Cosa dice oggi": "", "Idee provate": 0})
             continue
         details[label] = (table, skipped)
         best = best_idea(table)
+        test_start, end = table.attrs["test_start"], table.attrs["history"][1]
         rows.append({
             "Titolo": label,
+            "Periodo di prova": f"{test_start:%d/%m/%Y} – {end:%d/%m/%Y}",
             "Idea con vantaggio dimostrato": best["idea"] if best is not None else "nessuna",
             "Cosa dice oggi": ("DENTRO" if best["signal_today"] > 0 else "FUORI") if best is not None
             else "nessuna indicazione",
@@ -89,11 +91,16 @@ def render() -> None:
 
     st.markdown("##### Dettaglio per titolo")
     for label, (table, skipped) in details.items():
-        with st.expander(label):
+        test_start, end = table.attrs["test_start"], table.attrs["history"][1]
+        years = (end - test_start).days / 365.25
+        yearly = lambda v: pct((1 + v) ** (1 / years) - 1, signed=True)  # noqa: E731  total -> per year
+        with st.expander(f"{label} · periodo di prova {test_start:%d/%m/%Y} – {end:%d/%m/%Y} ({num(years, 1)} anni)"):
             shown = pd.DataFrame({
                 "Idea": table["idea"],
-                "Rendimento": table["total_return"].map(lambda v: pct(v, signed=True)),
-                "Compra e tieni": table["bh_total_return"].map(lambda v: pct(v, signed=True)),
+                f"Rendimento dal {test_start:%d/%m/%Y}": table["total_return"].map(lambda v: pct(v, signed=True)),
+                "Annuo": table["total_return"].map(yearly),
+                "Compra e tieni (stesso periodo)": table["bh_total_return"].map(lambda v: pct(v, signed=True)),
+                "B&H annuo": table["bh_total_return"].map(yearly),
                 "Diff. Sharpe": table["sharpe_diff"].map(lambda v: num(v, signed=True)),
                 "Intervallo corretto": [f"{num(lo, signed=True)} … {num(hi, signed=True)}"
                                         for lo, hi in zip(table["ci_low"], table["ci_high"])],

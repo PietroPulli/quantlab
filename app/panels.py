@@ -158,26 +158,48 @@ def _long(table: pd.DataFrame, labels: dict) -> pd.DataFrame:
     return out
 
 
+def crosshair(table: pd.DataFrame, fmt) -> alt.Chart:
+    """Broker-style hover: a vertical line follows the pointer and shows every value of that day.
+
+    `table`: one column per series (column name = label shown), indexed by date. Values are
+    pre-formatted with `fmt` so the tooltip uses Italian separators.
+    """
+    shown = table.copy()
+    names = [f"s{i}" for i in range(len(shown.columns))]  # safe field names; labels go in the titles
+    titles = list(shown.columns)
+    shown.columns = names
+    for c in names:
+        shown[c] = shown[c].map(fmt)
+    shown = shown.rename_axis("date").reset_index()
+    near = alt.selection_point(nearest=True, on="pointerover", fields=["date"], empty=False, clear="pointerout")
+    return (alt.Chart(shown).mark_rule(color="#9aa3ae", strokeWidth=1, strokeDash=[3, 3])
+            .encode(x="date:T", opacity=alt.condition(near, alt.value(0.8), alt.value(0)),
+                    tooltip=[alt.Tooltip("date:T", title="Data", format="%d/%m/%Y"),
+                             *[alt.Tooltip(f"{n}:N", title=t) for n, t in zip(names, titles)]])
+            .add_params(near))
+
+
 def equity_chart(returns: pd.DataFrame, labels: dict, start_value: float = 1.0, log: bool = False,
                  y_title: str = "Valore di 1 €", height: int = 320) -> alt.Chart:
-    data = _long(start_value * (1 + returns).cumprod(), labels)
+    values = start_value * (1 + returns).cumprod()
+    data = _long(values, labels)
     y = alt.Y("value:Q", title=y_title, scale=alt.Scale(type="log" if log else "linear", zero=False),
               axis=alt.Axis(labelExpr=NUMBERS_IT, format=",.2f" if start_value == 1 else ",.0f"))
-    return (alt.Chart(data, height=height).mark_line(strokeWidth=1.6)
-            .encode(x=TIME_AXIS, y=y, color=_series_color(labels),
-                    tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("series:N", title="Serie"),
-                             alt.Tooltip("value:Q", title=y_title, format=",.2f")]))
+    lines = alt.Chart(data).mark_line(strokeWidth=1.6).encode(x=TIME_AXIS, y=y, color=_series_color(labels))
+    hover = crosshair(values.rename(columns=labels), (lambda v: num(v)) if start_value == 1 else euro)
+    return alt.layer(lines, hover).properties(height=height)
 
 
 def drawdown_chart(returns: pd.DataFrame, labels: dict) -> alt.Chart:
-    data = _long(returns.apply(drawdown), labels)
+    falls = returns.apply(drawdown)
+    data = _long(falls, labels)
     y = alt.Y("value:Q", title="Distanza dal massimo", axis=alt.Axis(format=".0%", labelExpr=NUMBERS_IT))
     area = (alt.Chart(data[data["series"] == labels["strategy"]], height=180)
             .mark_area(color=COLORS["strategy"], opacity=0.18, line={"color": COLORS["strategy"], "strokeWidth": 1.2})
             .encode(x=TIME_AXIS, y=y))
     bench = (alt.Chart(data[data["series"] == labels["buy_and_hold"]])
              .mark_line(color=COLORS["buy_and_hold"], strokeWidth=1.1).encode(x=TIME_AXIS, y=y))
-    return area + bench
+    return area + bench + crosshair(falls.rename(columns=labels), pct)
 
 
 def annual_chart(returns: pd.DataFrame, labels: dict, height: int = 260) -> alt.Chart:
@@ -220,10 +242,11 @@ def rolling_chart(returns: pd.DataFrame, labels: dict, kind: str, window: int, p
     else:
         table = returns.apply(lambda r: rolling_volatility(r, window, ppy))
         y = alt.Y("value:Q", title=f"Volatilità su {window} giorni", axis=alt.Axis(format=".0%", labelExpr=NUMBERS_IT))
-    lines = (alt.Chart(_long(table.dropna(), labels), height=200).mark_line(strokeWidth=1.3)
+    table = table.dropna()
+    lines = (alt.Chart(_long(table, labels), height=200).mark_line(strokeWidth=1.3)
              .encode(x=TIME_AXIS, y=y, color=_series_color(labels)))
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color=LINE).encode(y="y:Q")
-    return zero + lines
+    return zero + lines + crosshair(table.rename(columns=labels), num if kind == "sharpe" else pct)
 
 
 def trades_chart(prices: pd.Series, trades: pd.DataFrame) -> alt.Chart:
@@ -241,7 +264,7 @@ def trades_chart(prices: pd.Series, trades: pd.DataFrame) -> alt.Chart:
                                       scale=alt.Scale(domain=["buy", "sell"], range=["triangle-up", "triangle-down"])),
                       tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("action:N", title="Operazione"),
                                alt.Tooltip("price:Q", title="Prezzo", format=",.2f")]))
-    return line + points
+    return line + points + crosshair(prices.rename("Prezzo").to_frame(), num)
 
 
 def bootstrap_chart(samples: np.ndarray, ci: tuple[float, float]) -> alt.Chart:
@@ -399,6 +422,10 @@ def candle_chart(ohlcv: pd.DataFrame, days: int | None, trades: pd.DataFrame | N
                                     scale=alt.Scale(domain=["buy", "sell"], range=["triangle-up", "triangle-down"])),
                     tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("action:N", title="Operazione"),
                              alt.Tooltip("price:Q", title="Prezzo", format=",.2f")]))
+    day = data.set_index("date")[["Open", "High", "Low", "Close"]].rename(
+        columns={"Open": "Apertura", "High": "Massimo", "Low": "Minimo", "Close": "Chiusura"})
+    day["Volume"] = data.set_index("date")["Volume"]
+    layers.append(crosshair(day, lambda v: num(v) if abs(v) < 1e7 else f"{v:,.0f}".replace(",", ".")))
     price = alt.layer(*layers).properties(height=340)
     volume = base.mark_bar(opacity=0.45, size=width).encode(
         x=alt.X("date:T", title=None, axis=None), y=alt.Y("Volume:Q", title=None, axis=None), color=color,

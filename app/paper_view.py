@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from common import COLORS, TIME_AXIS
-from panels import chart, context_line, euro, kpi_strip, num, pct
+from panels import chart, context_line, crosshair, euro, kpi_strip, num, pct
 from quantlab.paper import portfolio_history
 
 PAPER_DIR = Path(os.environ.get("QUANTLAB_PAPER_DIR", Path(__file__).resolve().parents[1] / "paper"))
@@ -68,13 +68,14 @@ def render() -> None:
 
     long = history.rename(columns={"value": "Conto demo", "bench_value": "Compra e tieni"})
     long = long.rename_axis("date").reset_index().melt("date", var_name="series", value_name="value")
-    chart(alt.Chart(long, height=300).mark_line(strokeWidth=1.6, point=len(history) < 30).encode(
+    lines = alt.Chart(long).mark_line(strokeWidth=1.6, point=len(history) < 30).encode(
         x=TIME_AXIS,
         y=alt.Y("value:Q", title="Valore (€)", scale=alt.Scale(zero=False)),
         color=alt.Color("series:N", title=None, legend=alt.Legend(orient="top"),
                         scale=alt.Scale(domain=["Conto demo", "Compra e tieni"], range=list(COLORS.values()))),
-        tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("series:N", title="Serie"),
-                 alt.Tooltip("value:Q", title="Valore", format=",.2f")]))
+)
+    hover = crosshair(history.rename(columns={"value": "Conto demo", "bench_value": "Compra e tieni"}), euro)
+    chart(alt.layer(lines, hover).properties(height=300))
 
     st.markdown("##### Gli scomparti oggi")
     last = values.sort_values("date").groupby(["ticker", "idea"], sort=False).tail(1)
