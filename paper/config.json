@@ -1,0 +1,13 @@
+{
+  "start_cash": 10000,
+  "commission": 0.001,
+  "slippage": 0.0005,
+  "cash_rate": 0.02,
+  "slots": [
+    {"ticker": "SPY", "idea": "Segui la tendenza"},
+    {"ticker": "QQQ", "idea": "Compra quando sfonda verso l'alto"},
+    {"ticker": "FTSEMIB.MI", "idea": "Segui la tendenza"},
+    {"ticker": "GC=F", "idea": "Compra ciò che è salito nell'ultimo anno"},
+    {"ticker": "BTC-USD", "idea": "Esci quando il mercato ha paura"}
+  ]
+}

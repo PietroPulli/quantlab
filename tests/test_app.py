@@ -235,3 +235,41 @@ def test_scanner_view_lists_every_asset_with_a_corrected_verdict(fake_prices):
     assert list(summary.index) == ["Apple", "Bitcoin", "MSFT"]
     assert set(summary["Idee provate"]) <= {7, 8}  # earnings may not apply
     assert any("intervallo richiesto" in m.value for m in at.markdown)
+
+
+def test_demo_account_before_the_first_run_explains_when_it_starts(fake_prices, tmp_path, monkeypatch):
+    import shutil
+
+    shutil.copy(Path(APP).parents[1] / "paper" / "config.json", tmp_path / "config.json")
+    monkeypatch.setenv("QUANTLAB_PAPER_DIR", str(tmp_path))
+    import sys
+    sys.modules.pop("paper_view", None)  # re-read the folder setting
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.radio(key="view").set_value("Conto demo").run()
+    assert not at.exception
+    assert any("prima esecuzione serale" in i.value for i in at.info)
+
+
+def test_demo_account_shows_value_slots_and_trades(fake_prices, tmp_path, monkeypatch):
+    import json
+    import sys
+
+    config = {"start_cash": 1000, "commission": 0.001, "slippage": 0.0005, "cash_rate": 0.02,
+              "slots": [{"ticker": "SPY", "idea": "Segui la tendenza"}]}
+    (tmp_path / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    (tmp_path / "state.json").write_text(json.dumps({"start": "2026-10-07", "slots": []}), encoding="utf-8")
+    pd.DataFrame([{"date": "2026-10-07", "ticker": "SPY", "idea": "Segui la tendenza", "position": 1,
+                   "value": 1000.0, "bench_value": 1000.0},
+                  {"date": "2026-10-08", "ticker": "SPY", "idea": "Segui la tendenza", "position": 1,
+                   "value": 1012.0, "bench_value": 1010.0}]).to_csv(tmp_path / "values.csv", index=False)
+    pd.DataFrame([{"date": "2026-10-07", "ticker": "SPY", "idea": "Segui la tendenza", "price": 670.0,
+                   "action": "buy", "shares": 1.49, "value": 1000.0, "cost": 1.5}]).to_csv(
+        tmp_path / "trades.csv", index=False)
+    monkeypatch.setenv("QUANTLAB_PAPER_DIR", str(tmp_path))
+    sys.modules.pop("paper_view", None)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.radio(key="view").set_value("Conto demo").run()
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "1.012 €" in text and "+1,2%" in text
+    assert at.table[0].value.loc["SPY", "Posizione"] == "DENTRO"
