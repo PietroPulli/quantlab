@@ -111,3 +111,29 @@ def relevant_news(items: list[dict], terms: list[str]) -> list[dict]:
 
     patterns = [re.compile(rf"\b{re.escape(t)}\b", re.IGNORECASE) for t in terms if t]
     return [item for item in items if any(p.search(item["title"]) for p in patterns)]
+
+
+OHLCV = ["Open", "High", "Low", "Close", "Volume"]
+
+
+def download_ohlcv(ticker: str, start: str, end: str) -> pd.DataFrame:
+    """Daily open, high, low, close (adjusted) and volume of one ticker, for candlestick charts."""
+    import yfinance as yf  # imported here so tests never need the network stack
+
+    raw = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
+    if raw.empty:
+        raise ValueError(f"No data returned for {ticker} between {start} and {end}")
+    if isinstance(raw.columns, pd.MultiIndex):  # recent yfinance: (field, ticker) columns
+        raw = raw.xs(ticker, axis=1, level=1)
+    return raw[OHLCV].dropna(subset=["Close"])
+
+
+def load_ohlcv(ticker: str, start: str, end: str, cache_dir: str | Path = "data/") -> pd.DataFrame:
+    """download_ohlcv with the same local parquet cache as load_prices."""
+    path = _cache_path([f"ohlcv-{ticker}"], start, end, cache_dir)
+    if path.exists():
+        return pd.read_parquet(path)
+    ohlcv = download_ohlcv(ticker, start, end)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ohlcv.to_parquet(path)
+    return ohlcv

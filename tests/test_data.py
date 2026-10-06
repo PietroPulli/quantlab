@@ -114,3 +114,27 @@ def test_relevant_news_keeps_only_headlines_naming_the_asset():
 
 def test_relevant_news_with_no_terms_keeps_nothing():
     assert relevant_news([{"title": "Anything"}], []) == []
+
+
+def test_load_ohlcv_flattens_yfinance_columns_and_caches(monkeypatch, tmp_path):
+    import sys
+    import types
+
+    calls = []
+    idx = pd.bdate_range("2024-01-01", periods=3)
+    columns = pd.MultiIndex.from_product([["Close", "High", "Low", "Open", "Volume"], ["AAPL"]])
+    raw = pd.DataFrame(np.arange(15, dtype=float).reshape(3, 5), index=idx, columns=columns)
+
+    def fake_download(ticker, start, end, auto_adjust, progress):
+        calls.append(ticker)
+        return raw
+
+    monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(download=fake_download))
+    from quantlab.data import load_ohlcv
+
+    first = load_ohlcv("AAPL", "2024-01-01", "2024-01-04", cache_dir=tmp_path)
+    second = load_ohlcv("AAPL", "2024-01-01", "2024-01-04", cache_dir=tmp_path)
+    assert calls == ["AAPL"]  # second call served by the cache
+    assert list(first.columns) == ["Open", "High", "Low", "Close", "Volume"]
+    assert first["Close"].tolist() == [0.0, 5.0, 10.0]
+    pd.testing.assert_frame_equal(first, second, check_freq=False)
