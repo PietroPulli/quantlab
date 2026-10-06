@@ -119,6 +119,16 @@ FACTORS = {
 }
 
 
+# quantlab.ideas asks for factors by short name: map them to the app's (cached) loaders
+_IDEA_FACTORS = {"vix": "VIX (paura del mercato)", "yield_curve": "Curva dei tassi 10 anni - 2 anni (%)",
+                 "earnings": "Sorpresa dell'ultima trimestrale (%)"}
+
+
+def app_factor(name: str, ticker: str = "") -> pd.Series:
+    """The `factor` function quantlab.ideas needs, served from the app's cache."""
+    return load_factor(_IDEA_FACTORS[name], ticker)
+
+
 def factor_note(name: str) -> str:
     """One line on how a factor is kept honest (when its values become usable)."""
     kind, key, _ = FACTORS[name]
