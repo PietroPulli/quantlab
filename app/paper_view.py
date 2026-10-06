@@ -9,7 +9,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from common import COLORS, TIME_AXIS, app_factor, get_prices
+from common import COLORS, NUMBERS_IT, TIME_AXIS, app_factor, get_prices
 from panels import chart, context_line, crosshair, euro, kpi_strip, num, pct
 from quantlab.backtest import run_backtest
 from quantlab.ideas import IDEAS
@@ -50,7 +50,8 @@ def _account_chart(history: pd.DataFrame) -> None:
     long = named.rename_axis("date").reset_index().melt("date", var_name="series", value_name="value")
     lines = alt.Chart(long).mark_line(strokeWidth=1.6, point=len(history) < 30).encode(
         x=TIME_AXIS,
-        y=alt.Y("value:Q", title="Valore (€)", scale=alt.Scale(zero=False)),
+        y=alt.Y("value:Q", title="Valore (€)", scale=alt.Scale(zero=False),
+                axis=alt.Axis(format=",.0f", labelExpr=NUMBERS_IT)),
         color=alt.Color("series:N", title=None, legend=alt.Legend(orient="top"),
                         scale=alt.Scale(domain=["Conto demo", "Compra e tieni"], range=list(COLORS.values()))))
     chart(alt.layer(lines, crosshair(named, euro)).properties(height=300))
