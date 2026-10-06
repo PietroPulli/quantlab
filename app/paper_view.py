@@ -171,8 +171,13 @@ def _replay(config: dict) -> None:
     if not st.session_state.get("replay_started"):
         return
 
-    with st.spinner("Rivivo il periodo notte per notte..."):
-        trades, values, problems, checks = _run_replay(json.dumps(config, sort_keys=True), str(start), str(end))
+    try:
+        with st.spinner("Rivivo il periodo notte per notte..."):
+            trades, values, problems, checks = _run_replay(json.dumps(config, sort_keys=True), str(start), str(end))
+    except Exception as exc:  # usually Yahoo refusing a download for a moment: nothing is cached, retry works
+        st.error(f"Non sono riuscito a scaricare tutti i prezzi necessari ({exc}). Di solito è un blocco "
+                 "momentaneo di Yahoo Finance: riprova tra qualche minuto.")
+        return
     for problem in problems:
         st.warning(f"Scomparto saltato: {problem}")
     if not values:

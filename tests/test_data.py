@@ -138,3 +138,19 @@ def test_load_ohlcv_flattens_yfinance_columns_and_caches(monkeypatch, tmp_path):
     assert list(first.columns) == ["Open", "High", "Low", "Close", "Volume"]
     assert first["Close"].tolist() == [0.0, 5.0, 10.0]
     pd.testing.assert_frame_equal(first, second, check_freq=False)
+
+
+def test_dates_with_a_time_are_sent_to_yahoo_as_plain_days(monkeypatch, tmp_path):
+    import sys
+    import types
+
+    asked = []
+
+    def fake_download(tickers, start, end, auto_adjust, progress):
+        asked.append((start, end))
+        idx = pd.bdate_range("2026-01-05", periods=3)
+        return pd.DataFrame({("Close", "QQQ"): [1.0, 2.0, 3.0]}, index=idx)
+
+    monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(download=fake_download))
+    load_prices(["QQQ"], "2023-08-25 00:00:00", pd.Timestamp("2026-10-05"), cache_dir=tmp_path)
+    assert asked == [("2023-08-25", "2026-10-05")]

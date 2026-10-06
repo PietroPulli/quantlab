@@ -9,9 +9,16 @@ MAX_DAILY_JUMP = 0.25  # daily moves larger than 25% are flagged (catches 2:1 an
 MAX_DATE_GAP_DAYS = 7  # calendar days between consecutive rows before flagging a gap
 
 
+def day_string(when) -> str:
+    """Any date-like value -> 'YYYY-MM-DD'. Yahoo rejects dates with a time ('2026-10-05 00:00:00')."""
+    return pd.Timestamp(when).date().isoformat()
+
+
 def download_prices(tickers: list[str], start: str, end: str) -> pd.DataFrame:
     """Download adjusted close prices from Yahoo Finance (one column per ticker)."""
     import yfinance as yf  # imported here so tests never need the network stack
+
+    start, end = day_string(start), day_string(end)
 
     raw = yf.download(
         tickers, start=start, end=end, auto_adjust=True, progress=False
@@ -35,6 +42,7 @@ def load_prices(
     tickers: list[str], start: str, end: str, cache_dir: str | Path = "data/"
 ) -> pd.DataFrame:
     """Return prices from the local parquet cache, downloading and saving on a miss."""
+    start, end = day_string(start), day_string(end)
     path = _cache_path(tickers, start, end, cache_dir)
     if path.exists():
         return pd.read_parquet(path)
@@ -120,6 +128,7 @@ def download_ohlcv(ticker: str, start: str, end: str) -> pd.DataFrame:
     """Daily open, high, low, close (adjusted) and volume of one ticker, for candlestick charts."""
     import yfinance as yf  # imported here so tests never need the network stack
 
+    start, end = day_string(start), day_string(end)
     raw = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
     if raw.empty:
         raise ValueError(f"No data returned for {ticker} between {start} and {end}")
@@ -130,6 +139,7 @@ def download_ohlcv(ticker: str, start: str, end: str) -> pd.DataFrame:
 
 def load_ohlcv(ticker: str, start: str, end: str, cache_dir: str | Path = "data/") -> pd.DataFrame:
     """download_ohlcv with the same local parquet cache as load_prices."""
+    start, end = day_string(start), day_string(end)
     path = _cache_path([f"ohlcv-{ticker}"], start, end, cache_dir)
     if path.exists():
         return pd.read_parquet(path)
