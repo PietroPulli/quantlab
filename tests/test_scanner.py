@@ -63,3 +63,11 @@ def test_scan_remembers_the_periods_it_used():
     table = scan(prices, {"hold": HOLD}, n_bootstrap=50)
     assert table.attrs["history"] == (prices.index[0], prices.index[-1])
     assert prices.index[0] < table.attrs["test_start"] < prices.index[-1]
+
+
+def test_a_longer_test_period_starts_earlier():
+    prices = _trending_regimes()
+    short_test = scan(prices, {"hold": HOLD}, n_bootstrap=50, in_sample_fraction=0.8).attrs["test_start"]
+    long_test = scan(prices, {"hold": HOLD}, n_bootstrap=50, in_sample_fraction=0.5).attrs["test_start"]
+    assert long_test < short_test
+    assert long_test == prices.index[len(prices) // 2]

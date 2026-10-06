@@ -1,6 +1,6 @@
 """Scanner view: every idea on several assets, with the multiple-testing correction."""
 
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 import streamlit as st
@@ -15,17 +15,22 @@ VERDICT_TEXT = {"good": "Batte il B&H", "bad": "Peggio del B&H", "neutral": "Nes
 
 
 @st.cache_data(show_spinner=False, ttl=6 * 3600)
-def _scan_asset(ticker: str, day: str) -> tuple[pd.DataFrame, list[str]]:
-    """Scan one asset (cached for the day). Returns the table and the ideas that could not apply."""
-    today = date.fromisoformat(day)
-    prices = get_prices(ticker, str(date(today.year - YEARS_OF_HISTORY, 1, 1)), day)
+def _scan_asset(ticker: str, start: str, end: str, test_share: float) -> tuple[pd.DataFrame, list[str]]:
+    """Scan one asset on [start, end], judging the last `test_share` of the days (cached).
+
+    Returns the table and the ideas that could not apply to this asset.
+    """
+    prices = get_prices(ticker, start, end)
+    if len(prices) < 504:
+        raise ValueError("meno di 2 anni di prezzi nel periodo scelto")
     built, skipped = {}, []
     for name, idea in IDEAS.items():
         try:
             built[name] = idea.build(ticker, app_factor)
         except Exception:  # e.g. earnings asked for an index or a crypto
             skipped.append(name)
-    return scan(prices, built, cash_rate=CASH_RATE, n_bootstrap=300), skipped
+    table = scan(prices, built, cash_rate=CASH_RATE, n_bootstrap=300, in_sample_fraction=1 - test_share)
+    return table, skipped
 
 
 def render() -> None:
@@ -42,6 +47,22 @@ def render() -> None:
     tickers = [(n, ASSETS[n]) for n in chosen]
     tickers += [(t.strip().upper(), t.strip().upper()) for t in extra.split(",") if t.strip()]
 
+    # ---- period: data range and how much of it is judged ----
+    today = date.today()
+    p1, p2, p3 = st.columns([1, 1, 2])
+    start = p1.date_input("Dati dal", value=date(today.year - YEARS_OF_HISTORY, 1, 1), min_value=date(1995, 1, 1),
+                          max_value=today - timedelta(days=3 * 365), key="scan_start", format="DD/MM/YYYY")
+    end = p2.date_input("al", value=today, min_value=start + timedelta(days=3 * 365), max_value=today,
+                        key="scan_end", format="DD/MM/YYYY")
+    share = p3.slider("Periodo di prova (giudicato): ultimo", 20, 50, 30, 5, format="%d%%", key="scan_share",
+                      help="I giorni prima servono solo come storia (per esempio per la media a 200 giorni) "
+                           "e non entrano nel giudizio. Più lungo il periodo di prova, più affidabile il verdetto, "
+                           "ma meno storia per gli indicatori.") / 100
+    test_from = start + (end - start) * (1 - share)  # calendar approximation; exact dates come with the results
+    st.caption(f"Giudizio sul periodo **{test_from:%d/%m/%Y} – {end:%d/%m/%Y}** "
+               f"(circa {num((end - test_from).days / 365.25, 1)} anni); "
+               f"storia per gli indicatori dal {start:%d/%m/%Y}.")
+
     if st.button("Analizza", type="primary", key="scan_run"):
         st.session_state.scan_started = True
     if not st.session_state.get("scan_started") or not tickers:
@@ -53,7 +74,7 @@ def render() -> None:
     for i, (label, ticker) in enumerate(tickers):
         progress.progress(i / len(tickers), text=f"Analizzo {label}...")
         try:
-            table, skipped = _scan_asset(ticker, str(date.today()))
+            table, skipped = _scan_asset(ticker, str(start), str(end), share)
         except Exception as exc:  # unknown ticker, too little history, network
             rows.append({"Titolo": label, "Periodo di prova": "", "Idea con vantaggio dimostrato": f"errore: {exc}"[:80],
                          "Cosa dice oggi": "", "Idee provate": 0})

@@ -280,3 +280,14 @@ def test_demo_account_shows_value_slots_and_trades(fake_prices, tmp_path, monkey
     text = " ".join(m.value for m in at.markdown)
     assert "1.012 €" in text and "+1,2%" in text
     assert at.table[0].value.loc["SPY", "Posizione"] == "DENTRO"
+
+
+def test_scanner_period_controls_move_the_test_start(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    at.radio(key="view").set_value("Scanner").run()
+    at.multiselect(key="scan_assets").set_value(["Apple"]).run()
+    at.slider(key="scan_share").set_value(50).run()
+    assert any("Giudizio sul periodo" in c.value for c in at.caption)
+    at.button(key="scan_run").click().run()
+    assert not at.exception
+    assert at.table[0].value.loc["Apple", "Periodo di prova"]  # dates shown for the chosen period

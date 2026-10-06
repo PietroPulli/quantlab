@@ -21,13 +21,17 @@ def bonferroni_level(level: float, n_tests: int) -> float:
 
 
 def scan(prices: pd.Series, ideas: dict[str, tuple[Strategy, dict]], cash_rate: float = 0.0,
-         level: float = 0.95, n_bootstrap: int = 500, seed: int = 42) -> pd.DataFrame:
-    """One row per idea: out-of-sample results, corrected verdict and what it says today."""
+         level: float = 0.95, n_bootstrap: int = 500, seed: int = 42,
+         in_sample_fraction: float = 0.7) -> pd.DataFrame:
+    """One row per idea: out-of-sample results, corrected verdict and what it says today.
+
+    The first `in_sample_fraction` of the days is history only; the rest is the judged test period.
+    """
     strict = bonferroni_level(level, len(ideas))
     rows = []
     for name, (strategy, params) in ideas.items():
         report = evaluate_strategy(prices, strategy, params=params, name=name, cash_rate=cash_rate,
-                                   n_bootstrap=n_bootstrap, seed=seed)
+                                   n_bootstrap=n_bootstrap, seed=seed, in_sample_fraction=in_sample_fraction)
         low, high = confidence_interval(report.sharpe_diff_samples, strict)
         verdict = "good" if low > 0 else ("bad" if high < 0 else "neutral")
         _, today, since = current_signal(strategy(prices, **params))
