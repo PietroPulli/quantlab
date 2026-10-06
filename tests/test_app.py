@@ -34,6 +34,13 @@ def fake_prices(monkeypatch):
         return pd.DataFrame({tickers[0]: values}, index=idx)
 
     monkeypatch.setattr(quantlab.data, "load_prices", fake_load)
+
+    def fake_ohlcv(ticker, start, end, cache_dir="data/"):
+        close = fake_load([ticker], start, end)[ticker]
+        return pd.DataFrame({"Open": close * 0.999, "High": close * 1.01, "Low": close * 0.99,
+                             "Close": close, "Volume": 1_000_000.0})
+
+    monkeypatch.setattr(quantlab.data, "load_ohlcv", fake_ohlcv)
     fake_news = [{"title": "Notizia di prova su Apple e S&P 500", "publisher": "Test", "link": "https://example.com",
                   "published": pd.Timestamp("2026-01-01 10:00", tz="UTC")}]
     monkeypatch.setattr(quantlab.data, "latest_news", lambda query, count=5: fake_news)

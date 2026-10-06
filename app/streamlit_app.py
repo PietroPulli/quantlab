@@ -29,7 +29,7 @@ st.set_page_config(page_title="Quantlab", layout="wide")
 st.markdown(CSS, unsafe_allow_html=True)
 
 st.markdown(
-    '<div class="ql-brand"><b>Quantlab</b><span>Verifica storica di strategie di investimento: '
+    '<div class="ql-brand"><b>Quant<i>lab</i></b><span>Verifica storica di strategie di investimento: '
     "costi reali, dati mai visti, controllo della fortuna. Non è un consiglio di investimento.</span></div>",
     unsafe_allow_html=True,
 )

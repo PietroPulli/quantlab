@@ -16,40 +16,77 @@ from quantlab.validation import param_grid
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
-# Small additions on top of .streamlit/config.toml: header, verdict, KPI strip, tables.
-INK, MUTED, LINE, SURFACE = "#14181f", "#5d6673", "#dfe3e8", "#ffffff"
-POS, NEG = "#127a4b", "#b42318"  # gains and losses only
+# Dark trading-terminal look on top of .streamlit/config.toml.
+BG, PANEL, INK, MUTED, LINE = "#0c0f14", "#151a21", "#d6dae1", "#7c8592", "#232a33"
+SURFACE = PANEL
+POS, NEG = "#22a06b", "#e5484d"  # up / down, gains / losses only
 CSS = f"""
 <style>
-.block-container {{ padding-top: 2.2rem; max-width: 1400px; }}
-.ql-brand {{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }}
-.ql-brand b {{ font-size:1.25rem; letter-spacing:-0.01em; }}
-.ql-brand span {{ color:{MUTED}; font-size:0.85rem; }}
-.ql-context {{ color:{MUTED}; font-size:0.82rem; margin:2px 0 10px; }}
+.block-container {{ padding-top: 3.2rem; max-width: 1500px; }}
+.ql-brand {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:10px;
+             border-bottom:1px solid {LINE}; margin-bottom:6px; }}
+.ql-brand b {{ font-size:1.15rem; letter-spacing:-0.01em; color:#ffffff; }}
+.ql-brand b i {{ font-style:normal; color:#2f6bff; }}
+.ql-brand span {{ color:{MUTED}; font-size:0.8rem; }}
+.ql-context {{ color:{MUTED}; font-size:0.8rem; margin:2px 0 10px; }}
 .ql-context b {{ color:{INK}; font-weight:600; }}
-.ql-verdict {{ background:{SURFACE}; border:1px solid {LINE}; border-radius:4px; padding:14px 18px;
+/* quote header, as on a broker's instrument page */
+.ql-quote {{ display:flex; align-items:flex-end; gap:28px; flex-wrap:wrap; padding:6px 0 12px; }}
+.ql-quote .ql-name {{ font-size:1.25rem; font-weight:600; color:#ffffff; }}
+.ql-quote .ql-sym {{ font:500 0.78rem 'Geist Mono', monospace; color:{MUTED}; margin-left:8px; }}
+.ql-quote .ql-px {{ font:500 2rem 'Geist Mono', monospace; color:#ffffff; line-height:1; }}
+.ql-quote .ql-chg {{ font:500 1rem 'Geist Mono', monospace; margin-left:10px; }}
+.ql-quote .ql-meta {{ display:flex; gap:22px; flex-wrap:wrap; }}
+.ql-quote .ql-meta div {{ font:400 0.78rem 'Geist Mono', monospace; color:{INK}; }}
+.ql-quote .ql-meta span {{ display:block; font:400 0.68rem Geist, sans-serif; color:{MUTED};
+                           text-transform:uppercase; letter-spacing:0.05em; }}
+/* verdict bar and KPI strip */
+.ql-verdict {{ background:{PANEL}; border:1px solid {LINE}; border-radius:4px; padding:14px 18px;
                display:flex; gap:18px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }}
 .ql-pill {{ font:600 0.7rem 'Geist Mono', monospace; letter-spacing:0.06em; text-transform:uppercase;
             padding:4px 8px; border-radius:3px; white-space:nowrap; }}
-.ql-good .ql-pill {{ background:#e3f3ea; color:{POS}; }}
-.ql-bad .ql-pill {{ background:#fbe7e5; color:{NEG}; }}
-.ql-neutral .ql-pill {{ background:#f3eedf; color:#7a5d12; }}
-.ql-verdict .ql-head {{ font-weight:600; font-size:1rem; }}
+.ql-good .ql-pill {{ background:rgba(34,160,107,0.16); color:{POS}; }}
+.ql-bad .ql-pill {{ background:rgba(229,72,77,0.16); color:{NEG}; }}
+.ql-neutral .ql-pill {{ background:rgba(214,170,60,0.14); color:#d6aa3c; }}
+.ql-verdict .ql-head {{ font-weight:600; font-size:1rem; color:#ffffff; }}
 .ql-verdict .ql-sub {{ color:{MUTED}; font-size:0.85rem; }}
 .ql-verdict .ql-stats {{ margin-left:auto; display:flex; gap:22px; flex-wrap:wrap; }}
 .ql-kpis {{ display:grid; grid-template-columns:repeat(var(--cols, 4), minmax(0, 1fr)); gap:1px;
             background:{LINE}; border:1px solid {LINE}; border-radius:4px; overflow:hidden; margin-bottom:14px; }}
-.ql-kpi {{ padding:12px 16px; background:{SURFACE}; min-width:0; }}
+.ql-kpi {{ padding:12px 16px; background:{PANEL}; min-width:0; }}
 @media (max-width: 760px) {{ .ql-kpis {{ grid-template-columns:repeat(2, minmax(0, 1fr)); }} }}
-.ql-label {{ font-size:0.72rem; color:{MUTED}; text-transform:uppercase; letter-spacing:0.05em; }}
-.ql-value {{ font:500 1.3rem 'Geist Mono', monospace; color:{INK}; margin-top:2px; white-space:nowrap; }}
-.ql-bench {{ font:400 0.75rem 'Geist Mono', monospace; color:{MUTED}; margin-top:2px; }}
-.ql-pos {{ color:{POS}; }} .ql-neg {{ color:{NEG}; }}
-.ql-signal {{ background:{SURFACE}; border:1px solid {LINE}; border-radius:4px; padding:14px 18px; }}
-.ql-signal .ql-state {{ font:600 1.5rem 'Geist Mono', monospace; }}
-[data-testid="stTable"] td, [data-testid="stTable"] th {{ font-size:0.82rem; }}
+.ql-label {{ font-size:0.68rem; color:{MUTED}; text-transform:uppercase; letter-spacing:0.06em; }}
+.ql-value {{ font:500 1.25rem 'Geist Mono', monospace; color:#ffffff; margin-top:3px; white-space:nowrap; }}
+.ql-bench {{ font:400 0.74rem 'Geist Mono', monospace; color:{MUTED}; margin-top:2px; }}
+.ql-pos {{ color:{POS} !important; }} .ql-neg {{ color:{NEG} !important; }}
+.ql-signal {{ background:{PANEL}; border:1px solid {LINE}; border-radius:4px; padding:14px 18px; }}
+.ql-signal .ql-state {{ font:600 1.5rem 'Geist Mono', monospace; color:#ffffff; }}
+.ql-sub {{ color:{MUTED}; }}
+/* watchlist */
+.ql-watch {{ background:{PANEL}; border:1px solid {LINE}; border-radius:4px; }}
+.ql-watch-row {{ display:grid; grid-template-columns:1fr auto auto; gap:10px; padding:8px 12px;
+                 border-bottom:1px solid {LINE}; font-size:0.82rem; align-items:center; }}
+.ql-watch-row:last-child {{ border-bottom:none; }}
+.ql-watch-row.ql-active {{ background:rgba(47,107,255,0.12); box-shadow: inset 2px 0 0 #2f6bff; }}
+.ql-watch-row b {{ font-weight:500; color:#ffffff; }}
+.ql-watch-row small {{ display:block; font:400 0.7rem 'Geist Mono', monospace; color:{MUTED}; }}
+.ql-watch-row .ql-num {{ font:500 0.8rem 'Geist Mono', monospace; text-align:right; }}
+.ql-watch-head {{ padding:8px 12px; font-size:0.68rem; color:{MUTED}; text-transform:uppercase;
+                  letter-spacing:0.06em; border-bottom:1px solid {LINE}; }}
+/* tables and tabs */
+[data-testid="stTable"] td, [data-testid="stTable"] th {{ font-size:0.8rem; }}
 [data-testid="stTable"] td {{ font-family:'Geist Mono', monospace; font-variant-numeric:tabular-nums; }}
 [data-testid="stTabs"] button p {{ font-size:0.85rem; font-weight:500; }}
+/* the view switcher and period buttons look like a broker's top tabs and range pills */
+div[role="radiogroup"] {{ gap:4px !important; }}
+.st-key-view div[role="radiogroup"] label, .st-key-chart_range div[role="radiogroup"] label,
+.st-key-adv_chart_range div[role="radiogroup"] label {{ background:{PANEL}; border:1px solid {LINE};
+    border-radius:3px; padding:3px 10px !important; margin:0 !important; }}
+.st-key-view div[role="radiogroup"] label:has(input:checked), .st-key-chart_range div[role="radiogroup"] label:has(input:checked),
+.st-key-adv_chart_range div[role="radiogroup"] label:has(input:checked) {{ background:rgba(47,107,255,0.18);
+    border-color:#2f6bff; }}
+.st-key-view div[role="radiogroup"] label > div:first-child, .st-key-chart_range div[role="radiogroup"] label > div:first-child,
+.st-key-adv_chart_range div[role="radiogroup"] label > div:first-child {{ display:none !important; }}
 </style>
 """
 
@@ -141,7 +178,7 @@ def factor_note(name: str) -> str:
     return "Dato di mercato giornaliero: usato dal giorno stesso della chiusura."
 OPERATOR_LABELS = {">": "sopra (>)", "<": "sotto (<)", ">=": "sopra o uguale (≥)", "<=": "sotto o uguale (≤)"}
 
-COLORS = {"strategy": "#1f4aa8", "buy_and_hold": "#9aa1ab"}  # strategy in cobalt, benchmark in grey
+COLORS = {"strategy": "#4c8dff", "buy_and_hold": "#8a93a0"}  # strategy in blue, benchmark in grey
 # Vega-Lite expression: the year on January ticks, an Italian month abbreviation otherwise.
 MONTHS_IT = ("['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'][month(datum.value)]"
              " + ' ' + timeFormat(datum.value, '%y')")  # e.g. "ott 22"
@@ -198,6 +235,27 @@ def show_news(query: str, terms: list[str] | None = None) -> None:
                     f"{item['publisher']} · {when}</span>", unsafe_allow_html=True)
     st.caption("Solo contesto: le notizie non entrano nei calcoli. Non esiste un archivio gratuito di notizie "
                "datate con cui verificare onestamente se una regola basata sulle notizie avrebbe funzionato.")
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_ohlcv(ticker: str, years: int = 10) -> pd.DataFrame:
+    """Daily candles of the last `years` years up to today (refreshed every hour)."""
+    today = date.today()
+    return data.load_ohlcv(ticker, str(date(today.year - years, 1, 1)), str(today), cache_dir=DATA_DIR)
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def quotes(assets: tuple[tuple[str, str], ...]) -> list[dict]:
+    """Last close and day change of each (name, ticker), for the watchlist. Failures are skipped."""
+    rows = []
+    for name, ticker in assets:
+        try:
+            closes = get_ohlcv(ticker, years=1)["Close"]
+            rows.append({"name": name, "ticker": ticker, "last": closes.iloc[-1],
+                         "change": closes.iloc[-1] / closes.iloc[-2] - 1})
+        except Exception:  # one missing quote must not break the list
+            continue
+    return rows
 
 
 def verdict_tone(report: StrategyReport) -> str:

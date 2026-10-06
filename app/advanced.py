@@ -12,26 +12,31 @@ from common import (
     STRATEGY_UI,
     describe,
     factor_note,
+    get_ohlcv,
     get_prices,
     load_factor,
     show_news,
     verdict_tone,
 )
 from panels import (
+    RANGES,
     analyse,
     annual_chart,
     annual_table,
     bootstrap_chart,
+    candle_chart,
     chart,
     context_line,
     drawdown_chart,
     drawdown_table,
     equity_chart,
     kpi_strip,
+    ma_legend,
     metrics_table,
     monthly_heatmap,
     num,
     pct,
+    quote_header,
     rolling_chart,
     signal_panel,
     standard_kpis,
@@ -203,6 +208,11 @@ def render() -> None:
         # e.g. {"window": 50} -> "Finestra N (giorni) 50", using the same labels as the sliders
         used = ", ".join(f"{ui['params'][k][0]} {v}" for k, v in report.params.items()) or "nessun parametro"
     first, last = prices.index[0], prices.index[-1]
+    try:
+        ohlcv = get_ohlcv(ticker)
+        quote_header(ticker, ticker, ohlcv)
+    except Exception:  # the header is a nice-to-have: the analysis works without it
+        ohlcv = None
     context_line([
         f"<b>{html.escape(ticker)}</b>", f"<b>{html.escape(name)}</b> ({html.escape(used)})",
         f"dati {first:%d/%m/%Y} – {last:%d/%m/%Y}", f"prova dal <b>{report.split:%d/%m/%Y}</b>",
@@ -236,6 +246,11 @@ def render() -> None:
     tabs = st.tabs(["Sintesi", "Rendimenti", "Rischio", "Operazioni", "Robustezza", "Segnale e notizie", "Dati"])
 
     with tabs[0]:  # Summary
+        if ohlcv is not None:
+            days = RANGES[st.radio("Periodo grafico", list(RANGES), index=3, key="adv_chart_range",
+                                   horizontal=True, label_visibility="collapsed")]
+            chart(candle_chart(ohlcv, days, trades=a["trades"]))
+            ma_legend(with_trades=True)
         log = st.toggle("Scala logaritmica", key="adv_log",
                         help="Su periodi lunghi rende confrontabili le variazioni percentuali di inizio e fine.")
         st.markdown("##### Valore di 1 € investito, costi inclusi")

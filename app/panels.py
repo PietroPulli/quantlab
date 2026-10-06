@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from common import COLORS, LINE, MUTED, NEG, NUMBERS_IT, POS, TIME_AXIS
+from common import COLORS, INK, LINE, MUTED, NEG, NUMBERS_IT, POS, TIME_AXIS
 from quantlab.backtest import round_trips, run_backtest, trade_log, trade_stats
 from quantlab.metrics import (
     calendar_returns,
@@ -36,9 +36,11 @@ def pct(x: float, signed: bool = False, decimals: int = 1) -> str:
 
 
 def num(x: float, decimals: int = 2, signed: bool = False) -> str:
+    """1234.5 -> '1.234,50': Italian separators (thousands '.', decimals ',')."""
     if x is None or pd.isna(x):
         return "n/d"
-    return f"{x:{'+' if signed else ''}.{decimals}f}".replace(".", ",")
+    text = f"{x:{'+' if signed else ''},.{decimals}f}"
+    return text.replace(",", "_").replace(".", ",").replace("_", ".")
 
 
 def euro(x: float) -> str:
@@ -199,15 +201,15 @@ def monthly_heatmap(returns: pd.Series) -> alt.Chart:
     base = alt.Chart(data, height=max(120, 26 * table.shape[0])).encode(
         x=alt.X("mese:O", sort=MONTHS, title=None, axis=alt.Axis(orient="top", labelAngle=0)),
         y=alt.Y("year:O", title=None))
-    cells = base.mark_rect(stroke="#ffffff", strokeWidth=1).encode(
+    cells = base.mark_rect(stroke="#0c0f14", strokeWidth=1).encode(
         color=alt.Color("value:Q", legend=None,
-                        scale=alt.Scale(domain=[-limit, 0, limit], range=[NEG, "#f6f7f9", POS], clamp=True,
+                        scale=alt.Scale(domain=[-limit, 0, limit], range=[NEG, "#1b2129", POS], clamp=True,
                                         interpolate="rgb")),
         tooltip=[alt.Tooltip("year:O", title="Anno"), alt.Tooltip("mese:N", title="Mese"),
                  alt.Tooltip("label:N", title="Rendimento")])
     text = base.mark_text(font="Geist Mono", fontSize=10).encode(
         text="label:N",
-        color=alt.condition(f"abs(datum.value) > {limit * 0.6}", alt.value("#ffffff"), alt.value("#14181f")))
+        color=alt.value("#ffffff"))
     return cells + text
 
 
@@ -226,7 +228,7 @@ def rolling_chart(returns: pd.DataFrame, labels: dict, kind: str, window: int, p
 
 def trades_chart(prices: pd.Series, trades: pd.DataFrame) -> alt.Chart:
     line = (alt.Chart(prices.rename("price").rename_axis("date").reset_index(), height=300)
-            .mark_line(color="#4b5563", strokeWidth=1.1)
+            .mark_line(color="#aeb5bf", strokeWidth=1.1)
             .encode(x=TIME_AXIS, y=alt.Y("price:Q", title="Prezzo", scale=alt.Scale(zero=False),
                                          axis=alt.Axis(labelExpr=NUMBERS_IT))))
     points = (alt.Chart(trades.rename_axis("date").reset_index())
@@ -244,10 +246,10 @@ def trades_chart(prices: pd.Series, trades: pd.DataFrame) -> alt.Chart:
 
 def bootstrap_chart(samples: np.ndarray, ci: tuple[float, float]) -> alt.Chart:
     data = pd.DataFrame({"d": samples[~np.isnan(samples)]})
-    bars = (alt.Chart(data, height=220).mark_bar(color="#b8c2d6")
+    bars = (alt.Chart(data, height=220).mark_bar(color="#3a4554")
             .encode(x=alt.X("d:Q", bin=alt.Bin(maxbins=45), title="Sharpe strategia − Sharpe compra e tieni"),
                     y=alt.Y("count():Q", title="Campioni")))
-    zero = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(color="#14181f", strokeWidth=1.5).encode(x="x:Q")
+    zero = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(color="#ffffff", strokeWidth=1.5).encode(x="x:Q")
     bounds = (alt.Chart(pd.DataFrame({"x": list(ci)}))
               .mark_rule(color=COLORS["strategy"], strokeDash=[4, 3], strokeWidth=1.5).encode(x="x:Q"))
     return bars + zero + bounds
@@ -332,8 +334,98 @@ def signal_panel(ticker: str, day_, value: float, since, last_price: float, tone
 
 def chart(c: alt.Chart) -> None:
     """Render an Altair chart with the app's chart settings."""
-    st.altair_chart(c.configure_view(strokeWidth=0)
-                    .configure_axis(labelColor=MUTED, titleColor=MUTED, gridColor="#eceff3", domainColor=LINE,
-                                    labelFont="Geist", titleFont="Geist", titleFontWeight=500)
-                    .configure_legend(labelColor="#14181f", labelFont="Geist"),
+    st.altair_chart(c.properties(background="transparent").configure_view(strokeWidth=0)
+                    .configure_axis(labelColor=MUTED, titleColor=MUTED, gridColor="#1b2129", domainColor=LINE,
+                                    tickColor=LINE, labelFont="Geist", titleFont="Geist", titleFontWeight=500)
+                    .configure_legend(labelColor=INK, labelFont="Geist"),
                     width="stretch")
+
+
+
+# ---------------------------------------------------------------- broker-style instrument page
+RANGES = {"1M": 21, "3M": 63, "6M": 126, "1A": 252, "5A": 1260, "MAX": None}  # trading days shown
+MA_COLORS = ["#d6aa3c", "#a77bff"]
+
+
+def quote_header(name: str, ticker: str, ohlcv: pd.DataFrame) -> None:
+    """Instrument header: last price, day change, day and 52-week range, volume."""
+    last, prev = ohlcv.iloc[-1], ohlcv.iloc[-2]
+    change = last["Close"] / prev["Close"] - 1
+    year = ohlcv.tail(252)
+    cls = "ql-pos" if change >= 0 else "ql-neg"
+    volume = f"{last['Volume']:,.0f}".replace(",", ".") if last["Volume"] else "n/d"
+    meta = [("Apertura", num(last["Open"])), ("Min / Max giorno", f"{num(last['Low'])} – {num(last['High'])}"),
+            ("Min / Max 52 sett.", f"{num(year['Low'].min())} – {num(year['High'].max())}"),
+            ("Volume", volume), ("Chiusura del", ohlcv.index[-1].strftime("%d/%m/%Y"))]
+    meta_html = "".join(f"<div><span>{k}</span>{v}</div>" for k, v in meta)
+    st.markdown(
+        f'<div class="ql-quote"><div><div class="ql-name">{html.escape(name)}'
+        + (f'<span class="ql-sym">{html.escape(ticker)}</span>' if ticker != name else "") + '</div>'
+        f'<div><span class="ql-px">{num(last["Close"])}</span>'
+        f'<span class="ql-chg {cls}">{num(last["Close"] - prev["Close"], signed=True)} '
+        f'({pct(change, True, 2)})</span></div></div>'
+        f'<div class="ql-meta">{meta_html}</div></div>', unsafe_allow_html=True)
+
+
+def candle_chart(ohlcv: pd.DataFrame, days: int | None, trades: pd.DataFrame | None = None,
+                 averages: tuple[int, ...] = (50, 200)) -> alt.VConcatChart:
+    """Candlesticks with moving averages and optional trade markers, volume bars below."""
+    data = ohlcv.copy()
+    for n in averages:
+        data[f"MA{n}"] = data["Close"].rolling(n).mean()  # on the full history, then cut to the range
+    data = data.tail(days) if days else data
+    data = data.rename_axis("date").reset_index()
+    data["up"] = data["Close"] >= data["Open"]
+    color = alt.condition("datum.up", alt.value(POS), alt.value(NEG))
+    width = max(1, min(8, 700 // max(1, len(data))))
+    x = TIME_AXIS
+    base = alt.Chart(data)
+    y = alt.Y("Low:Q", title=None, scale=alt.Scale(zero=False), axis=alt.Axis(labelExpr=NUMBERS_IT, orient="right"))
+    wick = base.mark_rule(strokeWidth=1).encode(x=x, y=y, y2="High:Q", color=color)
+    body = base.mark_bar(size=width).encode(
+        x=x, y="Open:Q", y2="Close:Q", color=color,
+        tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("Open:Q", title="Apertura", format=",.2f"),
+                 alt.Tooltip("High:Q", title="Massimo", format=",.2f"),
+                 alt.Tooltip("Low:Q", title="Minimo", format=",.2f"),
+                 alt.Tooltip("Close:Q", title="Chiusura", format=",.2f")])
+    layers = [wick, body]
+    for n, c in zip(averages, MA_COLORS):
+        layers.append(base.mark_line(color=c, strokeWidth=1.2, opacity=0.9).encode(x=x, y=f"MA{n}:Q"))
+    if trades is not None and not trades.empty:
+        shown = trades[trades.index >= data["date"].iloc[0]].rename_axis("date").reset_index()
+        layers.append(
+            alt.Chart(shown).mark_point(filled=True, size=110, opacity=1, stroke="#0c0f14", strokeWidth=1)
+            .encode(x="date:T", y="price:Q",
+                    color=alt.Color("action:N", legend=None,
+                                    scale=alt.Scale(domain=["buy", "sell"], range=[POS, NEG])),
+                    shape=alt.Shape("action:N", legend=None,
+                                    scale=alt.Scale(domain=["buy", "sell"], range=["triangle-up", "triangle-down"])),
+                    tooltip=[alt.Tooltip("date:T", title="Data"), alt.Tooltip("action:N", title="Operazione"),
+                             alt.Tooltip("price:Q", title="Prezzo", format=",.2f")]))
+    price = alt.layer(*layers).properties(height=340)
+    volume = base.mark_bar(opacity=0.45, size=width).encode(
+        x=alt.X("date:T", title=None, axis=None), y=alt.Y("Volume:Q", title=None, axis=None), color=color,
+    ).properties(height=60)
+    return alt.vconcat(price, volume, spacing=2)
+
+
+def ma_legend(averages: tuple[int, ...] = (50, 200), with_trades: bool = False) -> None:
+    items = [f'<span style="color:{c}">━</span> Media {n} giorni' for n, c in zip(averages, MA_COLORS)]
+    if with_trades:
+        items += [f'<span style="color:{POS}">▲</span> acquisto della strategia',
+                  f'<span style="color:{NEG}">▼</span> vendita']
+    st.markdown('<div class="ql-context">' + " &nbsp; ".join(items) + "</div>", unsafe_allow_html=True)
+
+
+def watchlist(rows: list[dict], active: str) -> None:
+    """Broker-style list: name, ticker, last price and day change. rows: name, ticker, last, change."""
+    body = ['<div class="ql-watch"><div class="ql-watch-head">Watchlist · ultima chiusura</div>']
+    for r in rows:
+        cls = "ql-pos" if r["change"] >= 0 else "ql-neg"
+        act = " ql-active" if r["name"] == active else ""
+        body.append(f'<div class="ql-watch-row{act}"><div><b>{html.escape(r["name"])}</b>'
+                    f'<small>{html.escape(r["ticker"])}</small></div>'
+                    f'<div class="ql-num">{num(r["last"])}</div>'
+                    f'<div class="ql-num {cls}">{pct(r["change"], True, 2)}</div></div>')
+    body.append("</div>")
+    st.markdown("".join(body), unsafe_allow_html=True)

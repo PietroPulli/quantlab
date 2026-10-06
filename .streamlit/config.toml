@@ -1,24 +1,24 @@
-# Look of the app: a dense, sober research terminal (models: TradingView strategy tester,
-# Portfolio Visualizer, pyfolio tear sheets), not the default Streamlit template.
+# Look of the app: a dark trading terminal (models: TradingView, Interactive Brokers TWS,
+# exchange web apps), not the default Streamlit template.
 
 [theme]
-base = "light"
-primaryColor = "#1f4aa8"             # cobalt: buttons, sliders, the strategy line
-backgroundColor = "#f6f7f9"
-secondaryBackgroundColor = "#eceff3" # inputs and sidebar
-textColor = "#14181f"
-borderColor = "#dfe3e8"
+base = "dark"
+primaryColor = "#2f6bff"             # accent: buttons, selected items, the strategy line
+backgroundColor = "#0c0f14"
+secondaryBackgroundColor = "#151a21" # inputs and panels
+textColor = "#d6dae1"
+borderColor = "#232a33"
 showWidgetBorder = true
 baseRadius = "0.25rem"
 font = "Geist:https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap, sans-serif"
 codeFont = "'Geist Mono':https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap, monospace"
-headingFontSizes = ["1.6rem", "1.15rem", "0.95rem"]
+headingFontSizes = ["1.5rem", "1.1rem", "0.95rem"]
 headingFontWeights = [600, 600, 600]
 baseFontSize = 14
 
 [theme.sidebar]
-backgroundColor = "#eef0f4"
-secondaryBackgroundColor = "#ffffff"
+backgroundColor = "#10141a"
+secondaryBackgroundColor = "#151a21"
 
 [client]
 toolbarMode = "viewer"  # hides the developer "Deploy" button for visitors
