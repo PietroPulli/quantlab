@@ -32,7 +32,8 @@ def pct(x: float, signed: bool = False, decimals: int = 1) -> str:
     """0.1234 -> '12,3%' (Italian decimal comma); NaN -> 'n/d'."""
     if x is None or pd.isna(x):
         return "n/d"
-    return f"{x * 100:{'+' if signed else ''}.{decimals}f}%".replace(".", ",")
+    text = f"{x * 100:{'+' if signed else ''},.{decimals}f}%"
+    return text.replace(",", "_").replace(".", ",").replace("_", ".")  # +1,237.3% -> +1.237,3%
 
 
 def num(x: float, decimals: int = 2, signed: bool = False) -> str:

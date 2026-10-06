@@ -11,6 +11,7 @@ from quantlab.ideas import IDEAS
 from quantlab.scanner import best_idea, scan
 from simple import ASSETS, CASH_RATE, YEARS_OF_HISTORY
 
+MIN_HISTORY_DAYS = 365  # calendar days of history needed before the test (200-day average, 12-month momentum)
 VERDICT_TEXT = {"good": "Batte il B&H", "bad": "Peggio del B&H", "neutral": "Nessuna evidenza"}
 
 
@@ -54,14 +55,19 @@ def render() -> None:
                           max_value=today - timedelta(days=3 * 365), key="scan_start", format="DD/MM/YYYY")
     end = p2.date_input("al", value=today, min_value=start + timedelta(days=3 * 365), max_value=today,
                         key="scan_end", format="DD/MM/YYYY")
-    share = p3.slider("Periodo di prova (giudicato): ultimo", 20, 50, 30, 5, format="%d%%", key="scan_share",
-                      help="I giorni prima servono solo come storia (per esempio per la media a 200 giorni) "
-                           "e non entrano nel giudizio. Più lungo il periodo di prova, più affidabile il verdetto, "
-                           "ma meno storia per gli indicatori.") / 100
+    share = p3.slider("Periodo di prova (giudicato): ultimo", 20, 90, 30, 5, format="%d%%", key="scan_share",
+                      help="I giorni prima servono solo come storia per gli indicatori (media a 200 giorni, "
+                           "momentum a 12 mesi) e non entrano nel giudizio: ne serve almeno 1 anno. "
+                           "Più lungo il periodo di prova, più affidabile il verdetto.") / 100
     test_from = start + (end - start) * (1 - share)  # calendar approximation; exact dates come with the results
     st.caption(f"Giudizio sul periodo **{test_from:%d/%m/%Y} – {end:%d/%m/%Y}** "
                f"(circa {num((end - test_from).days / 365.25, 1)} anni); "
                f"storia per gli indicatori dal {start:%d/%m/%Y}.")
+    if (test_from - start).days < MIN_HISTORY_DAYS:
+        st.warning("Prima del periodo di prova resta meno di 1 anno di storia: le idee che guardano 200 giorni o "
+                   "12 mesi indietro non avrebbero i dati per partire. Anticipa la data di inizio o abbassa la "
+                   "percentuale.")
+        return
 
     if st.button("Analizza", type="primary", key="scan_run"):
         st.session_state.scan_started = True

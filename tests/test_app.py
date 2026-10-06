@@ -291,3 +291,15 @@ def test_scanner_period_controls_move_the_test_start(fake_prices):
     at.button(key="scan_run").click().run()
     assert not at.exception
     assert at.table[0].value.loc["Apple", "Periodo di prova"]  # dates shown for the chosen period
+
+
+def test_scanner_refuses_a_test_period_without_one_year_of_history(fake_prices):
+    from datetime import date
+
+    at = AppTest.from_file(APP, default_timeout=120).run()
+    at.radio(key="view").set_value("Scanner").run()
+    today = date.today()
+    at.date_input(key="scan_start").set_value(date(today.year - 4, today.month, 1)).run()
+    at.slider(key="scan_share").set_value(90).run()  # 4 years x 10% = less than a year of history
+    assert any("meno di 1 anno di storia" in w.value for w in at.warning)
+    assert not at.table  # nothing analysed
