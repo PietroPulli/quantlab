@@ -1,12 +1,32 @@
 """Download, cache and validate adjusted close prices."""
 
 import hashlib
+import time
 from pathlib import Path
 
 import pandas as pd
 
 MAX_DAILY_JUMP = 0.25  # daily moves larger than 25% are flagged (catches 2:1 and 3:2 splits)
 MAX_DATE_GAP_DAYS = 7  # calendar days between consecutive rows before flagging a gap
+RETRY_WAITS = (2, 5)  # seconds before the 2nd and 3rd attempt: Yahoo often refuses cloud servers briefly
+_sleep = time.sleep  # replaced by a no-op in tests
+
+
+def _yahoo_download(what: str, **kwargs) -> pd.DataFrame:
+    """yfinance.download with retries: an empty answer or an error is tried again, then raised."""
+    import yfinance as yf  # imported here so tests never need the network stack
+
+    for wait in (*RETRY_WAITS, None):
+        try:
+            raw = yf.download(**kwargs, auto_adjust=True, progress=False)
+            if not raw.empty:
+                return raw
+            problem = f"No data returned for {what} between {kwargs['start']} and {kwargs['end']}"
+        except Exception as exc:  # network error, rate limit...
+            problem = f"Download of {what} failed: {exc}"
+        if wait is None:
+            raise ValueError(problem)
+        _sleep(wait)
 
 
 def day_string(when) -> str:
@@ -16,15 +36,8 @@ def day_string(when) -> str:
 
 def download_prices(tickers: list[str], start: str, end: str) -> pd.DataFrame:
     """Download adjusted close prices from Yahoo Finance (one column per ticker)."""
-    import yfinance as yf  # imported here so tests never need the network stack
-
     start, end = day_string(start), day_string(end)
-
-    raw = yf.download(
-        tickers, start=start, end=end, auto_adjust=True, progress=False
-    )
-    if raw.empty:
-        raise ValueError(f"No data returned for {tickers} between {start} and {end}")
+    raw = _yahoo_download(str(tickers), tickers=tickers, start=start, end=end)
     prices = raw["Close"]
     if isinstance(prices, pd.Series):  # single ticker on some yfinance versions
         prices = prices.to_frame(tickers[0])
@@ -126,12 +139,8 @@ OHLCV = ["Open", "High", "Low", "Close", "Volume"]
 
 def download_ohlcv(ticker: str, start: str, end: str) -> pd.DataFrame:
     """Daily open, high, low, close (adjusted) and volume of one ticker, for candlestick charts."""
-    import yfinance as yf  # imported here so tests never need the network stack
-
     start, end = day_string(start), day_string(end)
-    raw = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
-    if raw.empty:
-        raise ValueError(f"No data returned for {ticker} between {start} and {end}")
+    raw = _yahoo_download(ticker, tickers=ticker, start=start, end=end)
     if isinstance(raw.columns, pd.MultiIndex):  # recent yfinance: (field, ticker) columns
         raw = raw.xs(ticker, axis=1, level=1)
     return raw[OHLCV].dropna(subset=["Close"])

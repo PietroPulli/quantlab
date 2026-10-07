@@ -9,6 +9,15 @@ from quantlab import data
 from quantlab.data import latest_news, load_prices, relevant_news, validate_prices
 
 
+
+@pytest.fixture(autouse=True)
+def no_waiting(monkeypatch):
+    """Retries must not really sleep during tests."""
+    import quantlab.data
+
+    monkeypatch.setattr(quantlab.data, "_sleep", lambda seconds: None)
+
+
 def _clean() -> pd.DataFrame:
     idx = pd.bdate_range("2024-01-01", periods=10)
     return pd.DataFrame({"AAA": np.linspace(100, 110, 10)}, index=idx)
@@ -125,8 +134,8 @@ def test_load_ohlcv_flattens_yfinance_columns_and_caches(monkeypatch, tmp_path):
     columns = pd.MultiIndex.from_product([["Close", "High", "Low", "Open", "Volume"], ["AAPL"]])
     raw = pd.DataFrame(np.arange(15, dtype=float).reshape(3, 5), index=idx, columns=columns)
 
-    def fake_download(ticker, start, end, auto_adjust, progress):
-        calls.append(ticker)
+    def fake_download(tickers, start, end, auto_adjust, progress):
+        calls.append(tickers)
         return raw
 
     monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(download=fake_download))
@@ -146,7 +155,7 @@ def test_dates_with_a_time_are_sent_to_yahoo_as_plain_days(monkeypatch, tmp_path
 
     asked = []
 
-    def fake_download(tickers, start, end, auto_adjust, progress):
+    def fake_download(tickers, start, end, auto_adjust, progress):  # called with keywords
         asked.append((start, end))
         idx = pd.bdate_range("2026-01-05", periods=3)
         return pd.DataFrame({("Close", "QQQ"): [1.0, 2.0, 3.0]}, index=idx)
@@ -154,3 +163,27 @@ def test_dates_with_a_time_are_sent_to_yahoo_as_plain_days(monkeypatch, tmp_path
     monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(download=fake_download))
     load_prices(["QQQ"], "2023-08-25 00:00:00", pd.Timestamp("2026-10-05"), cache_dir=tmp_path)
     assert asked == [("2023-08-25", "2026-10-05")]
+
+
+def test_yahoo_refusals_are_retried_then_reported(monkeypatch):
+    import sys
+    import types
+
+    import quantlab.data as data
+
+    calls = []
+
+    def flaky(tickers, start, end, auto_adjust, progress):
+        calls.append(1)
+        if len(calls) < 3:
+            return pd.DataFrame()  # refused twice
+        return pd.DataFrame({("Close", "SPY"): [1.0]}, index=pd.to_datetime(["2026-01-05"]))
+
+    monkeypatch.setattr(data, "_sleep", lambda s: None)
+    monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(download=flaky))
+    assert data.download_prices(["SPY"], "2026-01-01", "2026-01-10")["SPY"].tolist() == [1.0]
+    assert len(calls) == 3
+
+    monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(download=lambda **k: pd.DataFrame()))
+    with pytest.raises(ValueError, match="No data returned"):
+        data.download_prices(["SPY"], "2026-01-01", "2026-01-10")
