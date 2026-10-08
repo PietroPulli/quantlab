@@ -54,3 +54,19 @@ Idea: stare sull'azionario che sale di più, ma passare alle obbligazioni quando
 ## Controlli di robustezza (dopo, dichiarati)
 Costi raddoppiati; parametri vicini (volatilità obiettivo 10% e 20%; media a 8 e 12 mesi; momentum a 6 e 9 mesi).
 Servono solo a vedere se il risultato è fragile, **non** a scegliere i parametri migliori.
+
+---
+
+## Risultati (aggiunti dopo il test, 9 ottobre 2026; regole sopra invariate)
+Dettagli in `notebooks/05_metodo_migliore.ipynb`. Periodo da novembre 2006, la prima decisione possibile
+(il pre-registro diceva gennaio 2007), a settembre 2026.
+
+| | Rendimento annuo | Sharpe | Perdita massima | Verdetto |
+|---|---|---|---|---|
+| Buy & hold SPY | 10,9% | 0,55 | −55,2% | benchmark |
+| A. Volatility targeting | 10,2% | 0,65 | −35,0% | non vince (intervallo −0,08 / +0,31) |
+| B. Trend su 5 asset | 5,1% | 0,47 | −13,9% | non vince |
+| C. Dual momentum | 7,4% | 0,44 | −33,7% | non vince |
+| 60/40 (riferimento) | 8,0% | 0,62 | −32,6% | — |
+
+Nessuna candidata batte il buy & hold in modo statisticamente distinguibile. La A è la più vicina e la più robusta.
