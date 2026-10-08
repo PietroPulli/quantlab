@@ -1,0 +1,6 @@
+{
+  "comment": "Tickers kept in this folder and refreshed every night (scripts/update_market.py): app watchlist, markets panel, demo account and factors.",
+  "since": "2000-01-01",
+  "tickers": ["SPY", "QQQ", "FTSEMIB.MI", "AAPL", "TSLA", "RACE.MI", "ENI.MI", "ISP.MI", "BTC-USD", "GC=F",
+              "^VIX", "^TNX", "^IRX", "DX-Y.NYB", "CL=F", "EURUSD=X"]
+}

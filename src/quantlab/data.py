@@ -51,15 +51,68 @@ def _cache_path(tickers: list[str], start: str, end: str, cache_dir: str | Path)
     return Path(cache_dir) / f"prices_{digest}.parquet"
 
 
+# ---------------------------------------------------------------- market snapshot
+# A folder of CSV files (one per ticker, daily OHLCV) refreshed every night by GitHub Actions.
+# Reading it avoids asking Yahoo from cloud servers, which it often refuses.
+SNAPSHOT_LAG_DAYS = 5  # a snapshot ending up to 5 days before the request still counts (weekends, holidays)
+
+
+def snapshot_path(snapshot_dir: str | Path, ticker: str) -> Path:
+    """'^VIX' -> market/_VIX.csv, 'GC=F' -> market/GC_F.csv (safe file names)."""
+    safe = ticker.replace("^", "_").replace("=", "_").replace("/", "_")
+    return Path(snapshot_dir) / f"{safe}.csv"
+
+
+def save_snapshot(ohlcv: pd.DataFrame, snapshot_dir: str | Path, ticker: str) -> Path:
+    """Write the candles to market/<ticker>.csv (rounded to 6 decimals to keep git diffs small)."""
+    path = snapshot_path(snapshot_dir, ticker)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ohlcv.round(6).rename_axis("Date").to_csv(path)
+    return path
+
+
+def read_snapshot(snapshot_dir: str | Path | None, ticker: str) -> pd.DataFrame | None:
+    """The saved candles of `ticker`, or None if there is no snapshot folder or no file for it."""
+    if snapshot_dir is None or not snapshot_path(snapshot_dir, ticker).exists():
+        return None
+    return pd.read_csv(snapshot_path(snapshot_dir, ticker), index_col="Date", parse_dates=True)
+
+
+def _from_snapshot(snapshot: pd.DataFrame | None, start: str, end: str, stale_ok: bool) -> pd.DataFrame | None:
+    """The [start, end) slice of the snapshot if it covers the request (or anyway, if stale_ok)."""
+    if snapshot is None or snapshot.empty:
+        return None
+    covers = (snapshot.index[0] <= pd.Timestamp(start) + pd.Timedelta(days=SNAPSHOT_LAG_DAYS)
+              and snapshot.index[-1] >= pd.Timestamp(end) - pd.Timedelta(days=SNAPSHOT_LAG_DAYS + 1))
+    if not (covers or stale_ok):
+        return None
+    part = snapshot[(snapshot.index >= start) & (snapshot.index < end)]
+    return part if len(part) else None
+
+
 def load_prices(
-    tickers: list[str], start: str, end: str, cache_dir: str | Path = "data/"
+    tickers: list[str], start: str, end: str, cache_dir: str | Path = "data/",
+    snapshot_dir: str | Path | None = None,
 ) -> pd.DataFrame:
-    """Return prices from the local parquet cache, downloading and saving on a miss."""
+    """Prices from the snapshot (if it covers the request), else the parquet cache, else Yahoo.
+
+    If Yahoo fails and a snapshot exists, its data is used even if it ends a little early.
+    """
     start, end = day_string(start), day_string(end)
+    snapshot = read_snapshot(snapshot_dir, tickers[0]) if len(tickers) == 1 else None
+    hit = _from_snapshot(snapshot, start, end, stale_ok=False)
+    if hit is not None:
+        return hit[["Close"]].rename(columns={"Close": tickers[0]})
     path = _cache_path(tickers, start, end, cache_dir)
     if path.exists():
         return pd.read_parquet(path)
-    prices = download_prices(tickers, start, end)
+    try:
+        prices = download_prices(tickers, start, end)
+    except ValueError:
+        fallback = _from_snapshot(snapshot, start, end, stale_ok=True)
+        if fallback is None:
+            raise
+        return fallback[["Close"]].rename(columns={"Close": tickers[0]})
     path.parent.mkdir(parents=True, exist_ok=True)
     prices.to_parquet(path)
     return prices
@@ -146,13 +199,24 @@ def download_ohlcv(ticker: str, start: str, end: str) -> pd.DataFrame:
     return raw[OHLCV].dropna(subset=["Close"])
 
 
-def load_ohlcv(ticker: str, start: str, end: str, cache_dir: str | Path = "data/") -> pd.DataFrame:
-    """download_ohlcv with the same local parquet cache as load_prices."""
+def load_ohlcv(ticker: str, start: str, end: str, cache_dir: str | Path = "data/",
+               snapshot_dir: str | Path | None = None) -> pd.DataFrame:
+    """Candles from the snapshot, else the parquet cache, else Yahoo (snapshot as fallback)."""
     start, end = day_string(start), day_string(end)
+    snapshot = read_snapshot(snapshot_dir, ticker)
+    hit = _from_snapshot(snapshot, start, end, stale_ok=False)
+    if hit is not None:
+        return hit[OHLCV]
     path = _cache_path([f"ohlcv-{ticker}"], start, end, cache_dir)
     if path.exists():
         return pd.read_parquet(path)
-    ohlcv = download_ohlcv(ticker, start, end)
+    try:
+        ohlcv = download_ohlcv(ticker, start, end)
+    except ValueError:
+        fallback = _from_snapshot(snapshot, start, end, stale_ok=True)
+        if fallback is None:
+            raise
+        return fallback[OHLCV]
     path.parent.mkdir(parents=True, exist_ok=True)
     ohlcv.to_parquet(path)
     return ohlcv

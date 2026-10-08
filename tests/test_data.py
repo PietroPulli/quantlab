@@ -187,3 +187,67 @@ def test_yahoo_refusals_are_retried_then_reported(monkeypatch):
     monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(download=lambda **k: pd.DataFrame()))
     with pytest.raises(ValueError, match="No data returned"):
         data.download_prices(["SPY"], "2026-01-01", "2026-01-10")
+
+
+def _snapshot(tmp_path, start="2020-01-01", end="2026-10-02"):
+    from quantlab.data import save_snapshot
+
+    idx = pd.bdate_range(start, end)
+    close = pd.Series(range(1, len(idx) + 1), index=idx, dtype=float)
+    ohlcv = pd.DataFrame({"Open": close, "High": close + 1, "Low": close - 1, "Close": close, "Volume": 10.0})
+    save_snapshot(ohlcv, tmp_path / "market", "^VIX")
+    return close
+
+
+def _no_yahoo(monkeypatch, calls):
+    import sys
+    import types
+
+    def refuse(**kwargs):
+        calls.append(kwargs["tickers"])
+        return pd.DataFrame()
+
+    monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(download=refuse))
+
+
+def test_snapshot_round_trip_with_safe_file_names(tmp_path):
+    from quantlab.data import read_snapshot, snapshot_path
+
+    close = _snapshot(tmp_path)
+    assert snapshot_path(tmp_path / "market", "^VIX").name == "_VIX.csv"
+    assert snapshot_path(tmp_path / "market", "GC=F").name == "GC_F.csv"
+    back = read_snapshot(tmp_path / "market", "^VIX")
+    pdt.assert_series_equal(back["Close"], close, check_names=False, check_freq=False)
+    assert read_snapshot(tmp_path / "market", "SPY") is None  # no file for it
+    assert read_snapshot(None, "^VIX") is None  # no snapshot folder at all
+
+
+def test_snapshot_serves_covered_requests_without_downloading(monkeypatch, tmp_path):
+    from quantlab.data import load_ohlcv, snapshot_path
+
+    close = _snapshot(tmp_path)
+    calls = []
+    _no_yahoo(monkeypatch, calls)
+    assert snapshot_path(tmp_path / "market", "^VIX").name == "_VIX.csv"
+    # ends on Friday 2 Oct; asked "until Monday 5 Oct": still covered (weekend)
+    prices = load_prices(["^VIX"], "2021-01-01", "2026-10-05", cache_dir=tmp_path, snapshot_dir=tmp_path / "market")
+    assert calls == []
+    assert prices["^VIX"].iloc[-1] == close.iloc[-1] and prices.index[0] == pd.Timestamp("2021-01-01")
+    candles = load_ohlcv("^VIX", "2021-01-01", "2026-10-05", cache_dir=tmp_path, snapshot_dir=tmp_path / "market")
+    assert list(candles.columns) == ["Open", "High", "Low", "Close", "Volume"] and calls == []
+
+
+def test_snapshot_not_covering_goes_to_yahoo_and_is_the_fallback_if_refused(monkeypatch, tmp_path):
+    close = _snapshot(tmp_path, end="2026-06-30")  # three months old
+    calls = []
+    _no_yahoo(monkeypatch, calls)
+    prices = load_prices(["^VIX"], "2021-01-01", "2026-10-05", cache_dir=tmp_path, snapshot_dir=tmp_path / "market")
+    assert calls  # it tried Yahoo first, which refused
+    assert prices["^VIX"].iloc[-1] == close.iloc[-1]  # then used the snapshot rather than failing
+
+
+def test_without_snapshot_a_refusal_is_still_an_error(monkeypatch, tmp_path):
+    calls = []
+    _no_yahoo(monkeypatch, calls)
+    with pytest.raises(ValueError):
+        load_prices(["XYZ"], "2021-01-01", "2026-10-05", cache_dir=tmp_path, snapshot_dir=tmp_path / "market")

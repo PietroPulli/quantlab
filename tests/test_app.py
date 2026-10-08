@@ -27,7 +27,7 @@ def _advanced() -> AppTest:
 def fake_prices(monkeypatch):
     """Replace the download with a seeded random walk of ~6 years."""
 
-    def fake_load(tickers, start, end, cache_dir="data/"):
+    def fake_load(tickers, start, end, cache_dir="data/", snapshot_dir=None):
         rng = np.random.default_rng(0)
         idx = pd.bdate_range("2015-01-01", periods=1500)
         values = 100 * np.exp(np.cumsum(rng.normal(0.0003, 0.01, len(idx))))
@@ -35,7 +35,7 @@ def fake_prices(monkeypatch):
 
     monkeypatch.setattr(quantlab.data, "load_prices", fake_load)
 
-    def fake_ohlcv(ticker, start, end, cache_dir="data/"):
+    def fake_ohlcv(ticker, start, end, cache_dir="data/", snapshot_dir=None):
         close = fake_load([ticker], start, end)[ticker]
         return pd.DataFrame({"Open": close * 0.999, "High": close * 1.01, "Low": close * 0.99,
                              "Close": close, "Volume": 1_000_000.0})

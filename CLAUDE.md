@@ -4,7 +4,8 @@
 Sono Pietro, studente al primo anno di Ingegneria dell'Automazione al Politecnico di Milano.
 Non so ancora programmare bene: questo progetto serve a **costruire uno strumento serio di
 ricerca quantitativa** e, allo stesso tempo, a **imparare davvero** Python e la metodologia quant.
-Devo poter spiegare e difendere ogni riga del codice in un colloquio.
+Molto codice lo scrive Claude: io devo saper spiegare cosa fa e giustificare ogni scelta
+(metodo, regole, trade-off) in un colloquio.
 
 ## Come devi lavorare con me (modalità tutor)
 1. **Parla in italiano.** Codice, nomi di variabili e docstring in inglese (standard del settore).

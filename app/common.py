@@ -16,6 +16,7 @@ from quantlab.strategies import breakout, mean_reversion, momentum, moving_avera
 from quantlab.validation import param_grid
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+MARKET_DIR = Path(__file__).resolve().parents[1] / "market"  # nightly snapshot, read before asking Yahoo
 
 # Dark trading-terminal look on top of .streamlit/config.toml.
 BG, PANEL, INK, MUTED, LINE = "#0c0f14", "#151a21", "#d6dae1", "#7c8592", "#232a33"
@@ -204,7 +205,7 @@ NUMBERS_IT = ("replace(replace(replace(datum.label, regexp(',', 'g'), '_'), "
 @st.cache_data(show_spinner="Scarico i prezzi...")
 def get_prices(ticker: str, start: str, end: str) -> pd.Series:
     """Prices for one ticker, from the local cache or Yahoo Finance (cached per session too)."""
-    return data.load_prices([ticker], start, end, cache_dir=DATA_DIR)[ticker].dropna()
+    return data.load_prices([ticker], start, end, cache_dir=DATA_DIR, snapshot_dir=MARKET_DIR)[ticker].dropna()
 
 
 @st.cache_data(show_spinner="Scarico i dati...")
@@ -257,7 +258,8 @@ def show_news(query: str, terms: list[str] | None = None) -> None:
 def get_ohlcv(ticker: str, years: int = 10) -> pd.DataFrame:
     """Daily candles of the last `years` years up to today (refreshed every hour)."""
     today = date.today()
-    return data.load_ohlcv(ticker, str(date(today.year - years, 1, 1)), str(today), cache_dir=DATA_DIR)
+    return data.load_ohlcv(ticker, str(date(today.year - years, 1, 1)), str(today), cache_dir=DATA_DIR,
+                           snapshot_dir=MARKET_DIR)
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
