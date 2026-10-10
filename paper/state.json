@@ -8,7 +8,7 @@
       "shares": 2.5773394886022363,
       "bench_cash": 0.0,
       "bench_shares": 2.5773394886022363,
-      "last_date": "2026-10-08"
+      "last_date": "2026-10-09"
     },
     {
       "ticker": "QQQ",
@@ -17,7 +17,7 @@
       "shares": 2.640835715106104,
       "bench_cash": 0.0,
       "bench_shares": 2.640835715106104,
-      "last_date": "2026-10-08"
+      "last_date": "2026-10-09"
     },
     {
       "ticker": "FTSEMIB.MI",
@@ -26,7 +26,7 @@
       "shares": 0.03929709945294974,
       "bench_cash": 0.0,
       "bench_shares": 0.03929709945294974,
-      "last_date": "2026-10-08"
+      "last_date": "2026-10-09"
     },
     {
       "ticker": "GC=F",
@@ -35,7 +35,7 @@
       "shares": 0.4804176515183729,
       "bench_cash": 0.0,
       "bench_shares": 0.4804176515183729,
-      "last_date": "2026-10-08"
+      "last_date": "2026-10-09"
     },
     {
       "ticker": "BTC-USD",
@@ -44,7 +44,7 @@
       "shares": 0.023278695571241282,
       "bench_cash": 0.0,
       "bench_shares": 0.023278695571241282,
-      "last_date": "2026-10-07"
+      "last_date": "2026-10-08"
     }
   ]
 }
