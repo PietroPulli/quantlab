@@ -138,3 +138,27 @@ def test_a_theory_answer_without_numbers_is_not_sent_back():
     ask, seen = _model([{"role": "assistant", "content": "Lo Sharpe misura il rendimento per unità di rischio."}])
     assert list(agent.run([], _toolbox(), ask))[-1]["content"].startswith("Lo Sharpe")
     assert len(seen) == 1
+
+
+def test_a_choice_is_tested_with_another_analysis_before_it_is_final():
+    ask, seen = _model([_call("rendimenti_per_anno", ticker="UP", dal="2015-01-01"),
+                        {"role": "assistant", "content": "Sceglierei UP."},
+                        _call("rendimenti_per_anno", ticker="UP", dal="2010-01-01"),
+                        {"role": "assistant", "content": "Confermo UP, anche dal 2010."}])
+    question = [{"role": "user", "content": "Su cosa investiresti a lungo termine?"}]
+    events = list(agent.run(question, _toolbox(), ask))
+    assert [e["type"] for e in events] == ["tool", "tool", "answer"]
+    assert seen[2][0][-1]["content"] == agent.VERIFY
+    assert events[-1]["content"] == "Confermo UP, anche dal 2010."
+
+
+def test_a_plain_data_question_gets_no_extra_check():
+    ask, seen = _model([_call("rendimenti_per_anno", ticker="UP"), {"role": "assistant", "content": "Nel 2024: +12%."}])
+    events = list(agent.run([{"role": "user", "content": "Quanto ha reso UP nel 2024?"}], _toolbox(), ask))
+    assert events[-1]["content"] == "Nel 2024: +12%." and len(seen) == 2
+
+
+def test_compare_warns_when_one_ticker_shortens_the_period():
+    result = _toolbox().run("confronta_titoli", {"tickers": ["UP", "NEW"], "dal": "2010-01-01"})
+    assert "senza NEW" in result["attenzione"]
+    assert "attenzione" not in _toolbox().run("confronta_titoli", {"tickers": ["UP"], "dal": "2010-01-01"})

@@ -17,7 +17,7 @@ from quantlab import metrics
 from quantlab.ideas import IDEAS, Factor, Idea
 from quantlab.scanner import scan
 
-MAX_ROUNDS = 6  # rounds of tool calls before the model must answer with what it has
+MAX_ROUNDS = 8  # rounds of tool calls before the model must answer with what it has
 MAX_TICKERS = 6  # per comparison: each one is a download
 MIN_DAYS = 252  # one year of prices, or the yearly numbers mean nothing
 CASH_RATE = 0.02  # same as the app: idle cash earns this, and the Sharpe is measured above it
@@ -28,6 +28,12 @@ DISCLAIMER = ("⚠️ *Analisi automatica di Quantlab sui prezzi passati, non un
 RECHECK = ("Nella risposta ci sono numeri ma non hai chiamato nessuno strumento. Se parlano di mercati "
            "(rendimenti, perdite, anni, confronti), chiama ora gli strumenti e rispondi con i loro risultati. "
            "Se erano solo esempi di teoria, riscrivi la stessa risposta.")
+VERIFY = ("Prima della risposta finale, metti alla prova la tua scelta con almeno un'altra analisi: un periodo "
+          "più lungo che includa i grandi crolli (es. dal 2000: bolla internet e 2008), i rendimenti anno per anno "
+          "della tua scelta, oppure il test delle idee. Poi dai la risposta finale: se i nuovi numeri la "
+          "smentiscono, cambiala e spiega perché.")
+# questions that ask for a choice: those answers get the extra check
+CHOICE = re.compile(r"investir|sceglie|scegli|convien|meglio|compr|punter|andresti|metteresti", re.IGNORECASE)
 VERDICTS = {"good": "batte il compra e tieni (regge al test della fortuna)",
             "bad": "peggio del compra e tieni, e non per sfortuna",
             "neutral": "differenza compatibile con la fortuna"}
@@ -156,6 +162,12 @@ class Toolbox:
             }
         result = {"periodo_comune": f"{common.index[0]:%Y-%m-%d} – {common.index[-1]:%Y-%m-%d}",
                   "titoli": results}
+        late = max(loaded, key=lambda t: loaded[t].index[0])  # the ticker whose history starts last
+        if common.index[0] > pd.Timestamp(start) + pd.Timedelta(days=30):
+            # said plainly, or the model reports "since 2000" when the numbers start in 2008
+            result["attenzione"] = (f"hai chiesto dal {start}, ma i numeri partono dal {common.index[0]:%Y-%m-%d} "
+                                    f"perché {late} non ha prezzi prima: per un periodo più lungo rifai il "
+                                    f"confronto senza {late}")
         if errors:
             result["titoli_senza_dati"] = errors
         return result
@@ -209,8 +221,12 @@ def run(messages: list[dict], toolbox: Toolbox, ask: Ask, max_rounds: int = MAX_
 
     Small models often answer from memory even when told to use the tools: an answer with numbers
     but no analysis behind it is sent back once, asking to run the tools (or confirm it was theory).
+    They also stop at the first result: when the question asks for a choice, the first answer is
+    sent back once to be tested with another analysis (e.g. a longer period with the big crashes).
     """
-    messages, used_tools, checked = list(messages), False, False
+    question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+    wants_choice = bool(CHOICE.search(question))
+    messages, used_tools, checked, verified = list(messages), False, False, False
     for _ in range(max_rounds):
         reply = ask(messages, TOOLS)
         calls = reply.get("tool_calls") or []
@@ -218,6 +234,11 @@ def run(messages: list[dict], toolbox: Toolbox, ask: Ask, max_rounds: int = MAX_
         if not calls and not used_tools and not checked and re.search(r"\d", content):
             checked = True
             messages += [{"role": "assistant", "content": content}, {"role": "user", "content": RECHECK}]
+            continue
+        # a choice is checked once more before it is final: one period or one comparison can mislead
+        if not calls and used_tools and wants_choice and not verified:
+            verified = True
+            messages += [{"role": "assistant", "content": content}, {"role": "user", "content": VERIFY}]
             continue
         if not calls:
             yield {"type": "answer", "content": content}
