@@ -320,25 +320,35 @@ def test_demo_replay_runs_the_account_over_a_past_period(fake_prices):
     assert any("Rendimento" in m.value for m in at.markdown)
 
 
-def _assistant_tab(monkeypatch, available: bool) -> AppTest:
+def _assistant_tab(monkeypatch, tmp_path, available: bool) -> AppTest:
     import streamlit as st
     import quantlab.assistant
 
     st.cache_data.clear()  # the app remembers for 30 s whether Ollama answers
     monkeypatch.setattr(quantlab.assistant, "is_available", lambda *a, **k: available)
     monkeypatch.setattr(quantlab.assistant, "stream_answer", lambda messages, **k: iter(["Lo Sharpe ", "è..."]))
+    monkeypatch.setattr(quantlab.assistant, "warm_up", lambda messages, **k: None)
+    monkeypatch.setenv("QUANTLAB_CHAT_FILE", str(tmp_path / "chat.json"))
     at = AppTest.from_file(APP, default_timeout=60).run()
     return at.radio(key="view").set_value("Assistente").run()
 
 
-def test_assistant_tab_explains_how_to_install_when_ollama_is_off(fake_prices, monkeypatch):
-    at = _assistant_tab(monkeypatch, available=False)
+def test_assistant_tab_explains_how_to_install_when_ollama_is_off(fake_prices, monkeypatch, tmp_path):
+    at = _assistant_tab(monkeypatch, tmp_path, available=False)
     assert not at.exception
     assert any("ollama pull" in box.value for box in at.info)
 
 
-def test_assistant_tab_answers_an_example_question(fake_prices, monkeypatch):
-    at = _assistant_tab(monkeypatch, available=True)
+def test_assistant_tab_answers_an_example_question(fake_prices, monkeypatch, tmp_path):
+    at = _assistant_tab(monkeypatch, tmp_path, available=True)
     at.button(key="assistant_example_0").click().run()
     assert not at.exception
     assert any("Lo Sharpe è..." in m.value for m in at.markdown)
+
+
+def test_assistant_chat_is_still_there_when_the_app_reopens(fake_prices, monkeypatch, tmp_path):
+    at = _assistant_tab(monkeypatch, tmp_path, available=True)
+    at.button(key="assistant_example_0").click().run()
+    reopened = AppTest.from_file(APP, default_timeout=60).run()  # a new session: nothing in memory
+    reopened = reopened.radio(key="view").set_value("Assistente").run()
+    assert any("Lo Sharpe è..." in m.value for m in reopened.markdown)

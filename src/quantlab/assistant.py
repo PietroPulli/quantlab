@@ -9,9 +9,11 @@ If Ollama is not running (e.g. on Streamlit Cloud), the app simply says so inste
 
 import json
 import os
+import threading
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
+from pathlib import Path
 
 OLLAMA_URL = os.environ.get("QUANTLAB_OLLAMA_URL", "http://localhost:11434")
 # Mixture of experts: 25B parameters of knowledge, but only ~4B work on each word, so it stays
@@ -36,6 +38,9 @@ Regole, senza eccezioni:
 - Quanto fidarsi lo dice il Verdetto nei FATTI: riportalo così com'è, senza cambiarlo.
   Solo se il Verdetto dice "compatibile con la fortuna", spiega che rimescolando la storia
   il vantaggio non resta stabilmente sopra zero, quindi non prova che l'idea funzioni.
+- Il test della fortuna rimescola la storia 1.000 volte: se l'idea vince in quasi tutti i
+  rimescolamenti il vantaggio è solido; se vince quasi mai è davvero peggio del compra e tieni
+  (un risultato chiaro, non incerto); se vince più o meno metà delle volte è fortuna.
 
 FATTI:
 {facts}"""
@@ -66,8 +71,9 @@ Regole, senza eccezioni:
   Vai dritto al punto; usa esempi numerici semplici quando aiutano, e dichiarali come esempi.
 - Non dare mai consigli di investimento personali: non dire a nessuno cosa comprare, vendere o
   quanto investire, nemmeno con un "no". Puoi spiegare come funzionano le cose e i rischi.
-- Non hai internet né prezzi aggiornati: non inventare prezzi, notizie o dati di oggi. Se una
-  cosa non la sai o non sei sicuro, dillo invece di indovinare.
+- Non hai internet: i soli prezzi che conosci sono quelli in "Mercati" qui sotto, se ci sono.
+  Non inventare altri prezzi, notizie o dati di oggi. Se una cosa non la sai o non sei sicuro,
+  dillo invece di indovinare.
 - Quando parli di guadagni passati, ricorda che il passato non garantisce il futuro.
 
 Come funziona Quantlab:
@@ -79,7 +85,12 @@ Come funziona Quantlab:
   compra e tieni in quasi tutti i rimescolamenti il vantaggio è solido; se perde in quasi tutti
   è peggio, e non per sfortuna; se la differenza oscilla attorno a zero è "compatibile con la fortuna".
 - Le idee pronte nell'app:
-{ideas}{result}"""
+{ideas}{market}{result}"""
+
+MARKET_BLOCK = """
+
+Mercati: ultime chiusure scaricate dall'app (dati Yahoo Finance). Riportale così come sono:
+{market}"""
 
 RESULT_BLOCK = """
 
@@ -88,12 +99,28 @@ L'ultimo risultato che l'utente ha sullo schermo (usa questi numeri così come s
 
 
 def build_chat(history: list[dict], question: str, ideas: dict[str, str],
-               facts: dict[str, str] | None = None) -> list[dict]:
-    """The free chat: rules + what Quantlab is (+ the result on screen, if any), the conversation, the question."""
-    result = RESULT_BLOCK.format(facts=facts_text(facts)) if facts else ""
-    system = CHAT_PROMPT.format(ideas=facts_text(ideas), result=result)
+               facts: dict[str, str] | None = None, market: dict[str, str] | None = None) -> list[dict]:
+    """The free chat: rules + what Quantlab is (+ market prices and the result on screen, if any),
+    then the conversation and the question."""
+    system = CHAT_PROMPT.format(ideas=facts_text(ideas),
+                                market=MARKET_BLOCK.format(market=facts_text(market)) if market else "",
+                                result=RESULT_BLOCK.format(facts=facts_text(facts)) if facts else "")
     return [{"role": "system", "content": system}, *history, {"role": "user", "content": question}]
 
+
+def save_chat(chat: list[dict], path: Path) -> None:
+    """Keep the conversation on disk, so it is still there next time the app opens."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(chat, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def load_chat(path: Path) -> list[dict]:
+    """The saved conversation, or an empty one if there is none (or the file is broken)."""
+    try:
+        chat = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [m for m in chat if isinstance(m, dict) and {"role", "content"} <= m.keys()]
 
 def is_available(url: str = OLLAMA_URL, model: str = MODEL, timeout: float = 0.5) -> bool:
     """True if Ollama answers at `url` and has `model` downloaded."""
@@ -105,17 +132,40 @@ def is_available(url: str = OLLAMA_URL, model: str = MODEL, timeout: float = 0.5
     return any(name == model or name.split(":")[0] == model for name in names)
 
 
-def stream_answer(messages: list[dict], url: str = OLLAMA_URL, model: str = MODEL,
-                  timeout: float = 300) -> Iterator[str]:
-    """Yield the answer piece by piece, as the model writes it (so the page fills while you read)."""
-    body = json.dumps({"model": model, "messages": messages, "stream": True,
+def _chat_request(messages: list[dict], url: str, model: str, stream: bool, **options) -> urllib.request.Request:
+    body = json.dumps({"model": model, "messages": messages, "stream": stream,
                        # no silent reasoning before answering: on a laptop CPU it more than doubles the wait
                        "think": False,
                        # stay in memory 30 min after the last question, so a study session loads it once
                        "keep_alive": "30m",
-                       "options": {"temperature": 0.3}}).encode()  # low temperature: precise, not creative
-    request = urllib.request.Request(f"{url}/api/chat", data=body,
-                                     headers={"Content-Type": "application/json"})
+                       # low temperature: precise, not creative
+                       "options": {"temperature": 0.3, **options}}).encode()
+    return urllib.request.Request(f"{url}/api/chat", data=body, headers={"Content-Type": "application/json"})
+
+
+def warm_up(messages: list[dict], url: str = OLLAMA_URL, model: str = MODEL) -> threading.Thread:
+    """Load the model and read the rules in the background, while the user is still typing.
+
+    Most of the wait before the first word is loading ~18 GB and reading the long system message.
+    Ollama remembers the start of the last conversation it read, so a later question with the
+    same system message starts almost immediately. Errors are ignored: it is only a head start.
+    """
+    def run() -> None:
+        try:
+            urllib.request.urlopen(_chat_request(messages, url, model, stream=False, num_predict=1),
+                                   timeout=600).read()
+        except OSError:
+            pass
+
+    thread = threading.Thread(target=run, daemon=True)  # daemon: never keeps the app from closing
+    thread.start()
+    return thread
+
+
+def stream_answer(messages: list[dict], url: str = OLLAMA_URL, model: str = MODEL,
+                  timeout: float = 300) -> Iterator[str]:
+    """Yield the answer piece by piece, as the model writes it (so the page fills while you read)."""
+    request = _chat_request(messages, url, model, stream=True)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         for line in response:  # Ollama sends one JSON object per line
             if not line.strip():

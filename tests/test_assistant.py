@@ -70,3 +70,36 @@ def test_chat_keeps_the_conversation_in_order():
     history = [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]
     messages = assistant.build_chat(history, "c", IDEAS)
     assert [m["content"] for m in messages[1:]] == ["a", "b", "c"]
+
+
+def test_chat_sees_market_prices_only_when_given():
+    assert "Mercati:" not in assistant.build_chat([], "q", IDEAS)[0]["content"]
+    system = assistant.build_chat([], "q", IDEAS, market={"VIX": "18,2 (-3,1% oggi)"})[0]["content"]
+    assert "- VIX: 18,2 (-3,1% oggi)" in system
+
+
+def test_saved_chat_comes_back_identical(tmp_path):
+    chat = [{"role": "user", "content": "Cos'è il β?"}, {"role": "assistant", "content": "È..."}]
+    path = tmp_path / "sub" / "chat.json"
+    assistant.save_chat(chat, path)
+    assert assistant.load_chat(path) == chat
+
+
+def test_missing_or_broken_chat_file_gives_an_empty_chat(tmp_path):
+    assert assistant.load_chat(tmp_path / "none.json") == []
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json", encoding="utf-8")
+    assert assistant.load_chat(broken) == []
+
+
+def test_warm_up_asks_for_one_word_and_never_raises(monkeypatch):
+    sent = []
+
+    def urlopen(request, timeout):
+        sent.append(json.loads(request.data))
+        raise OSError("Ollama is off")
+
+    monkeypatch.setattr(assistant.urllib.request, "urlopen", urlopen)
+    assistant.warm_up([{"role": "system", "content": "regole"}]).join(timeout=5)
+    assert sent[0]["options"]["num_predict"] == 1
+    assert sent[0]["think"] is False and sent[0]["messages"][0]["content"] == "regole"
