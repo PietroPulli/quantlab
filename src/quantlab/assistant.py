@@ -1,7 +1,8 @@
 """A language model running on this computer (Ollama): a finance chat, and a plain-Italian explainer.
 
 No API key and no cost: the model runs locally, and nothing leaves the machine. Two uses:
-- the "Assistente" tab: free questions on finance, markets and quant methods (build_chat);
+- the "Assistente" tab: free questions on finance, markets and quant methods (build_chat). There
+  the model is an agent: it runs Quantlab's analyses by itself through the tools in quantlab.agent;
 - the "Spiegamelo" panel: it rewords one result, using only the numbers the library already
   produced, passed as a list of facts (build_messages). The model never computes them.
 If Ollama is not running (e.g. on Streamlit Cloud), the app simply says so instead of failing.
@@ -68,16 +69,31 @@ statistica e metodi quantitativi (backtest, rischio, rendimento, overfitting, ma
 applicato ai mercati), Python per l'analisi dei dati finanziari, e come funziona Quantlab.
 Se la domanda è su altro, dillo in una frase e riporta gentilmente il discorso sulla finanza.
 
+Regola numero uno: se la risposta parla di rendimenti, rischi, crolli o di quale investimento
+scegliere, PRIMA chiama gli strumenti e solo DOPO rispondi. Rispondere a memoria su dati di
+mercato è vietato: la tua memoria può sbagliare, gli strumenti no.
+
 Regole, senza eccezioni:
 - Rispondi in italiano, chiaro e preciso, come un bravo professore a uno studente del primo anno.
   Vai dritto al punto; usa esempi numerici semplici quando aiutano, e dichiarali come esempi.
 - Di norma resta sotto le 150 parole: chi vuole approfondire te lo chiederà, e allora puoi
   scrivere di più.
-- Non dare mai consigli di investimento personali: non dire a nessuno cosa comprare, vendere o
-  quanto investire, nemmeno con un "no". Puoi spiegare come funzionano le cose e i rischi.
-- Non hai internet: i soli prezzi che conosci sono quelli in "Mercati" qui sotto, se ci sono.
-  Non inventare altri prezzi, notizie o dati di oggi. Se una cosa non la sai o non sei sicuro,
-  dillo invece di indovinare.
+- Hai degli strumenti che fanno i calcoli di Quantlab sui prezzi veri (Yahoo Finance). Usali da
+  solo, senza chiedere il permesso, ogni volta che la risposta dipende da numeri di mercato:
+  decidi tu quali titoli, quali alternative e quali periodi analizzare. Se un risultato ti fa
+  venire un dubbio (un crollo, un periodo strano), fai un'altra analisi prima di rispondere.
+  Per le domande di teoria non servono.
+- I numeri li prendi SOLO dagli strumenti, dai "Mercati" o dal risultato sullo schermo, scritti
+  così come sono. Non fare calcoli tuoi e non inventare prezzi, notizie, bilanci o date.
+  Se un dato non ce l'hai (es. utili di un'azienda, notizie), dillo invece di indovinare.
+- Se ti chiedono su cosa investiresti, cosa sceglieresti o cosa conviene: non rifiutare.
+  Analizza le alternative con gli strumenti e dai una scelta netta, motivata con i numeri,
+  dicendo anche i rischi (perdita massima, anni peggiori). Puoi arrivare a 250 parole.
+  Non aggiungere avvertenze legali: l'app mette da sola l'avvertenza in fondo.
+- Ticker utili: SPY (ETF S&P 500, USA), QQQ (ETF Nasdaq 100), EFA (paesi sviluppati senza USA),
+  EEM (paesi emergenti), VT (tutto il mondo, dal 2008), AGG (obbligazioni USA), TLT (titoli di
+  Stato USA lunghi), GC=F (oro), BTC-USD (bitcoin), FTSEMIB.MI (borsa italiana).
+  Il prezzo di un ETF non è il valore dell'indice: SPY a 600 non vuol dire S&P 500 a 600.
 - Quando parli di guadagni passati, ricorda che il passato non garantisce il futuro.
 
 Come funziona Quantlab:
@@ -136,35 +152,52 @@ def is_available(url: str = OLLAMA_URL, model: str = MODEL, timeout: float = 0.5
     return any(name == model or name.split(":")[0] == model for name in names)
 
 
-def _chat_request(messages: list[dict], url: str, model: str, stream: bool, **options) -> urllib.request.Request:
-    body = json.dumps({"model": model, "messages": messages, "stream": stream,
-                       # no silent reasoning before answering: on a laptop CPU it more than doubles the wait
-                       "think": False,
-                       # stay in memory 30 min after the last question, so a study session loads it once
-                       "keep_alive": "30m",
-                       # low temperature: precise, not creative
-                       "options": {"temperature": 0.3, "num_ctx": CONTEXT, **options}}).encode()
-    return urllib.request.Request(f"{url}/api/chat", data=body, headers={"Content-Type": "application/json"})
+def _chat_request(messages: list[dict], url: str, model: str, stream: bool, tools: list[dict] | None = None,
+                  **options) -> urllib.request.Request:
+    body = {"model": model, "messages": messages, "stream": stream,
+            # no silent reasoning before answering: on a laptop CPU it more than doubles the wait
+            "think": False,
+            # stay in memory 30 min after the last question, so a study session loads it once
+            "keep_alive": "30m",
+            # low temperature: precise, not creative
+            "options": {"temperature": 0.3, "num_ctx": CONTEXT, **options}}
+    if tools:
+        body["tools"] = tools  # functions the model may ask us to run (quantlab.agent)
+    return urllib.request.Request(f"{url}/api/chat", data=json.dumps(body).encode(),
+                                  headers={"Content-Type": "application/json"})
+
+
+def ask(messages: list[dict], tools: list[dict] | None = None, url: str = OLLAMA_URL, model: str = MODEL,
+        timeout: float = 600) -> dict:
+    """One whole reply (not streamed): {"role", "content"} plus "tool_calls" if the model wants a tool run."""
+    with urllib.request.urlopen(_chat_request(messages, url, model, stream=False, tools=tools),
+                                timeout=timeout) as response:
+        reply = json.load(response)
+    if "error" in reply:
+        raise RuntimeError(reply["error"])
+    return reply.get("message", {})
 
 
 _warming = threading.Lock()  # one warm-up at a time: Ollama answers one request at a time
 
 
-def warm_up(messages: list[dict], url: str = OLLAMA_URL, model: str = MODEL) -> threading.Thread | None:
+def warm_up(messages: list[dict], url: str = OLLAMA_URL, model: str = MODEL,
+            tools: list[dict] | None = None) -> threading.Thread | None:
     """Load the model and read the rules in the background, while the user is still typing.
 
     Most of the wait before the first word is loading ~18 GB and reading the long system message.
     Ollama remembers the start of the last conversation it read, so a later question with the
     same system message starts almost immediately. If a warm-up is already running nothing new
     starts (returns None): extra ones would only queue up in front of the real question.
-    Errors are ignored: it is only a head start.
+    Errors are ignored: it is only a head start. Pass the same `tools` as the real question:
+    they are part of what the model reads first.
     """
     if not _warming.acquire(blocking=False):
         return None
 
     def run() -> None:
         try:
-            urllib.request.urlopen(_chat_request(messages, url, model, stream=False, num_predict=1),
+            urllib.request.urlopen(_chat_request(messages, url, model, stream=False, tools=tools, num_predict=1),
                                    timeout=600).read()
         except OSError:
             pass

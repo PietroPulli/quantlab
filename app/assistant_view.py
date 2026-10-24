@@ -1,19 +1,21 @@
-"""The local AI (Ollama) in the app: the "Assistente" tab (free finance chat) and the "Spiegamelo" panel."""
+"""The local AI (Ollama) in the app: the "Assistente" tab (an agent that runs Quantlab's analyses by
+itself) and the "Spiegamelo" panel."""
 
 import os
 from pathlib import Path
 
 import streamlit as st
 
-from common import quotes
+from common import app_factor, get_prices, quotes
 from panels import num, pct
-from quantlab import assistant
+from quantlab import agent, assistant
 from quantlab.ideas import IDEAS
 
-EXAMPLES = ["Cos'è lo Sharpe ratio e perché conta più del rendimento?",
-            "Che cos'è l'overfitting in un backtest?",
-            "Che differenza c'è tra un ETF e un'azione?",
-            "Perché il compra e tieni è così difficile da battere?"]
+EXAMPLES = ["Se dovessi investire a lungo termine, su cosa andresti?",
+            "Meglio S&P 500 o Nasdaq negli ultimi 20 anni, considerando il rischio?",
+            "Conviene uscire dal mercato quando il VIX è alto, sull'S&P 500?",
+            "Cos'è lo Sharpe ratio e perché conta più del rendimento?"]
+ETFS = {"SPY", "QQQ"}  # their price is the fund's, not the index level: say so, or the AI calls 759 "the S&P 500"
 
 
 def _chat_file() -> Path:
@@ -22,11 +24,11 @@ def _chat_file() -> Path:
     return Path(os.environ.get("QUANTLAB_CHAT_FILE", default))
 
 
-def _warm_up(system: list[dict]) -> None:
+def _warm_up(system: list[dict], tools: list[dict] | None = None) -> None:
     """Start loading the model and reading these rules now, once per set of rules."""
     if st.session_state.get("warmed") != system[0]["content"]:
         st.session_state.warmed = system[0]["content"]
-        assistant.warm_up(system)
+        assistant.warm_up(system, tools=tools)
 
 
 def _market() -> dict[str, str]:
@@ -34,7 +36,9 @@ def _market() -> dict[str, str]:
     import simple  # here, not at the top: simple imports this module
 
     listed = tuple((simple.short(n), t) for n, t in simple.ASSETS.items() if t) + simple.MARKETS
-    return {f"{q['name']} ({q['ticker']})": f"{num(q['last'], 2)}, {pct(q['change'], True)} nell'ultimo giorno"
+    return {(f"ETF {q['ticker']} (replica {q['name']}; prezzo dell'ETF, non valore dell'indice)"
+             if q["ticker"] in ETFS else f"{q['name']} ({q['ticker']})"):
+            f"{num(q['last'], 2)}, {pct(q['change'], True)} nell'ultimo giorno"
             for q in quotes(listed)}
 
 
@@ -108,7 +112,10 @@ def render() -> None:
     market = _market() if use_market else None
     facts = facts if use_result else None
     for message in chat:
-        st.chat_message(message["role"]).markdown(message["content"])
+        with st.chat_message(message["role"]):
+            for step in message.get("steps", []):
+                _show_step(step)
+            st.markdown(message["content"])
 
     question = st.chat_input("Chiedi qualcosa su finanza, mercati, metodi quant o Quantlab",
                              key="assistant_input")
@@ -117,20 +124,48 @@ def render() -> None:
         for i, (column, example) in enumerate(zip(st.columns(2) * 2, EXAMPLES)):
             if column.button(example, key=f"assistant_example_{i}", width="stretch"):
                 question = example
-        st.caption(f"Modello {assistant.MODEL} sul tuo PC. Non ha internet: conosce solo i prezzi della "
-                   "watchlist. Non dà consigli di investimento e può sbagliare: verifica le cose importanti.")
+        st.caption(f"Modello {assistant.MODEL} sul tuo PC. Decide da solo quali analisi fare e le fa con "
+                   "Quantlab sui prezzi veri: ogni passaggio 🔧 si apre per vedere i numeri. Ci vuole qualche "
+                   "minuto. Non è una consulenza e può sbagliare: verifica le cose importanti.")
     if not question:
         # The model starts loading now, while you read and type: the first answer comes much sooner.
-        _warm_up(assistant.build_chat([], "", ideas, facts, market)[:1])
+        _warm_up(assistant.build_chat([], "", ideas, facts, market)[:1], tools=agent.TOOLS)
         return
 
     st.chat_message("user").markdown(question)
-    messages = assistant.build_chat(chat, question, ideas, facts, market)
+    messages = assistant.build_chat(_plain(chat), question, ideas, facts, market)
+    if "agent_tools" not in st.session_state:  # one per session: it remembers the analyses already done
+        st.session_state.agent_tools = agent.Toolbox(get_prices, app_factor)
+    steps = []
     try:
-        with st.spinner("Sto pensando..."):  # the first answer may still wait for the model to load
-            answer = st.chat_message("assistant").write_stream(assistant.stream_answer(messages))
+        with st.chat_message("assistant"):
+            with st.spinner("Sto pensando..."):  # the first answer may still wait for the model to load
+                for event in agent.run(messages, st.session_state.agent_tools, assistant.ask):
+                    if event["type"] == "tool":
+                        steps.append({"label": agent.describe(event["name"], event["args"]),
+                                      "result": event["result"]})
+                        _show_step(steps[-1])
+                    else:
+                        answer = _with_disclaimer(event["content"], steps)
+                        st.markdown(answer)
     except Exception as exc:  # Ollama stopped, model removed, timeout
         st.error(f"L'assistente non risponde: {exc}")
         return
-    chat += [{"role": "user", "content": question}, {"role": "assistant", "content": answer}]
+    chat += [{"role": "user", "content": question}, {"role": "assistant", "content": answer, "steps": steps}]
     assistant.save_chat(chat, _chat_file())
+
+
+def _plain(chat: list[dict]) -> list[dict]:
+    """The conversation as the model reads it: only who spoke and what was said (no analysis steps)."""
+    return [{"role": m["role"], "content": m["content"]} for m in chat]
+
+
+def _show_step(step: dict) -> None:
+    """One analysis the agent ran: a line you can open to see the raw numbers it got."""
+    with st.expander(f"🔧 {step['label']}"):
+        st.json(step["result"])
+
+
+def _with_disclaimer(answer: str, steps: list[dict]) -> str:
+    """Answers built on Quantlab's analyses always end with the warning: added here, never left to the model."""
+    return f"{answer}\n\n{agent.DISCLAIMER}" if steps else answer

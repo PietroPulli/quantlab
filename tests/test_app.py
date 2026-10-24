@@ -320,13 +320,14 @@ def test_demo_replay_runs_the_account_over_a_past_period(fake_prices):
     assert any("Rendimento" in m.value for m in at.markdown)
 
 
-def _assistant_tab(monkeypatch, tmp_path, available: bool) -> AppTest:
+def _assistant_tab(monkeypatch, tmp_path, available: bool, ask=None) -> AppTest:
     import streamlit as st
     import quantlab.assistant
 
     st.cache_data.clear()  # the app remembers for 30 s whether Ollama answers
     monkeypatch.setattr(quantlab.assistant, "is_available", lambda *a, **k: available)
-    monkeypatch.setattr(quantlab.assistant, "stream_answer", lambda messages, **k: iter(["Lo Sharpe ", "è..."]))
+    monkeypatch.setattr(quantlab.assistant, "ask",
+                        ask or (lambda messages, tools=None, **k: {"role": "assistant", "content": "Lo Sharpe è..."}))
     monkeypatch.setattr(quantlab.assistant, "warm_up", lambda messages, **k: None)
     monkeypatch.setenv("QUANTLAB_CHAT_FILE", str(tmp_path / "chat.json"))
     at = AppTest.from_file(APP, default_timeout=60).run()
@@ -352,6 +353,21 @@ def test_assistant_chat_is_still_there_when_the_app_reopens(fake_prices, monkeyp
     reopened = AppTest.from_file(APP, default_timeout=60).run()  # a new session: nothing in memory
     reopened = reopened.radio(key="view").set_value("Assistente").run()
     assert any("Lo Sharpe è..." in m.value for m in reopened.markdown)
+
+
+def test_assistant_runs_an_analysis_by_itself_and_warns_at_the_end(fake_prices, monkeypatch, tmp_path):
+    def ask(messages, tools=None, **k):  # first a tool call, then an answer that reads its result
+        if messages[-1]["role"] != "tool":
+            return {"role": "assistant", "content": "",
+                    "tool_calls": [{"function": {"name": "confronta_titoli", "arguments": {"tickers": ["SPY"]}}}]}
+        return {"role": "assistant", "content": "Andrei sull'S&P 500."}
+
+    at = _assistant_tab(monkeypatch, tmp_path, available=True, ask=ask)
+    at.button(key="assistant_example_0").click().run()
+    assert not at.exception
+    assert any("Confronto SPY" in e.label for e in at.expander)
+    answer = next(m.value for m in at.markdown if "Andrei sull'S&P 500." in m.value)
+    assert "non una consulenza" in answer
 
 
 def test_options_tab_prices_a_call_and_shows_the_greeks(fake_prices):

@@ -55,7 +55,8 @@ def test_chat_knows_the_rules_and_the_ideas():
     messages = assistant.build_chat([], "Cos'è lo Sharpe ratio?", IDEAS)
     system = messages[0]["content"]
     assert "- Segui la tendenza: Investito sopra la media a 200 giorni." in system
-    assert "Non dare mai consigli di investimento personali" in system
+    assert "su cosa investiresti" in system and "non rifiutare" in system  # a choice, backed by the tools
+    assert "SOLO dagli strumenti" in system
     assert "ultimo risultato" not in system  # no result on screen, no result block
     assert messages[-1] == {"role": "user", "content": "Cos'è lo Sharpe ratio?"}
 
@@ -131,3 +132,30 @@ def test_a_second_warm_up_does_not_start_while_one_is_running(monkeypatch):
     again = assistant.warm_up([{"role": "system", "content": "regole"}])
     assert again is not None  # free again
     again.join(timeout=5)  # finish while urlopen is still the fake one
+
+
+def test_ask_sends_the_tools_and_returns_the_whole_reply(monkeypatch):
+    sent = {}
+    reply = {"message": {"role": "assistant", "content": "",
+                         "tool_calls": [{"function": {"name": "prova_le_idee", "arguments": {"ticker": "SPY"}}}]}}
+
+    def urlopen(request, **kwargs):
+        sent.update(json.loads(request.data))
+        return io.BytesIO(json.dumps(reply).encode())
+
+    monkeypatch.setattr(assistant.urllib.request, "urlopen", urlopen)
+    message = assistant.ask([{"role": "user", "content": "q"}], tools=[{"type": "function"}])
+    assert sent["tools"] == [{"type": "function"}] and sent["stream"] is False
+    assert message["tool_calls"][0]["function"]["name"] == "prova_le_idee"
+
+
+def test_ask_without_tools_sends_none(monkeypatch):
+    sent = {}
+
+    def urlopen(request, **kwargs):
+        sent.update(json.loads(request.data))
+        return io.BytesIO(b'{"message": {"role": "assistant", "content": "ok"}}')
+
+    monkeypatch.setattr(assistant.urllib.request, "urlopen", urlopen)
+    assert assistant.ask([])["content"] == "ok"
+    assert "tools" not in sent

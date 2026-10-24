@@ -30,7 +30,9 @@ Molto codice lo scrive Claude: io devo saper spiegare cosa fa e giustificare ogn
 - Funzioni piccole, pure quando possibile, con type hints.
 
 ## Cosa NON è questo progetto
-- Non dà consigli di investimento personalizzati e non dice a nessuno cosa comprare.
+- Non dà consigli inventati. L'Assistente (tab Assistente) può dare una scelta motivata, ma solo con
+  numeri calcolati da Quantlab tramite i suoi strumenti (`src/quantlab/agent.py`) e sempre con
+  l'avvertenza in fondo (aggiunta dal codice, non dal modello): non è una consulenza finanziaria.
 - Non è un sistema di trading automatico con soldi veri (almeno non ora).
 
 ## Struttura
