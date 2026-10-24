@@ -19,6 +19,8 @@ OLLAMA_URL = os.environ.get("QUANTLAB_OLLAMA_URL", "http://localhost:11434")
 # Mixture of experts: 25B parameters of knowledge, but only ~4B work on each word, so it stays
 # usable on a laptop CPU (18 GB on disk, ~9 GB of RAM while it answers). Smaller PC: QUANTLAB_MODEL=gemma3:4b
 MODEL = os.environ.get("QUANTLAB_MODEL", "gemma4:26b")
+CONTEXT = 8192  # tokens the model reads at once: the rules (~1,400) + the recent conversation
+MAX_HISTORY = 10  # earlier messages are left out, so the rules always fit and reading stays quick
 
 SYSTEM_PROMPT = """Sei l'assistente di Quantlab, uno strumento che verifica onestamente le strategie \
 di investimento contro il "compra e tieni" (buy & hold).
@@ -69,6 +71,8 @@ Se la domanda è su altro, dillo in una frase e riporta gentilmente il discorso 
 Regole, senza eccezioni:
 - Rispondi in italiano, chiaro e preciso, come un bravo professore a uno studente del primo anno.
   Vai dritto al punto; usa esempi numerici semplici quando aiutano, e dichiarali come esempi.
+- Di norma resta sotto le 150 parole: chi vuole approfondire te lo chiederà, e allora puoi
+  scrivere di più.
 - Non dare mai consigli di investimento personali: non dire a nessuno cosa comprare, vendere o
   quanto investire, nemmeno con un "no". Puoi spiegare come funzionano le cose e i rischi.
 - Non hai internet: i soli prezzi che conosci sono quelli in "Mercati" qui sotto, se ci sono.
@@ -105,7 +109,7 @@ def build_chat(history: list[dict], question: str, ideas: dict[str, str],
     system = CHAT_PROMPT.format(ideas=facts_text(ideas),
                                 market=MARKET_BLOCK.format(market=facts_text(market)) if market else "",
                                 result=RESULT_BLOCK.format(facts=facts_text(facts)) if facts else "")
-    return [{"role": "system", "content": system}, *history, {"role": "user", "content": question}]
+    return [{"role": "system", "content": system}, *history[-MAX_HISTORY:], {"role": "user", "content": question}]
 
 
 def save_chat(chat: list[dict], path: Path) -> None:
@@ -139,28 +143,37 @@ def _chat_request(messages: list[dict], url: str, model: str, stream: bool, **op
                        # stay in memory 30 min after the last question, so a study session loads it once
                        "keep_alive": "30m",
                        # low temperature: precise, not creative
-                       "options": {"temperature": 0.3, **options}}).encode()
+                       "options": {"temperature": 0.3, "num_ctx": CONTEXT, **options}}).encode()
     return urllib.request.Request(f"{url}/api/chat", data=body, headers={"Content-Type": "application/json"})
 
 
-def warm_up(messages: list[dict], url: str = OLLAMA_URL, model: str = MODEL) -> threading.Thread:
+_warming = threading.Lock()  # one warm-up at a time: Ollama answers one request at a time
+
+
+def warm_up(messages: list[dict], url: str = OLLAMA_URL, model: str = MODEL) -> threading.Thread | None:
     """Load the model and read the rules in the background, while the user is still typing.
 
     Most of the wait before the first word is loading ~18 GB and reading the long system message.
     Ollama remembers the start of the last conversation it read, so a later question with the
-    same system message starts almost immediately. Errors are ignored: it is only a head start.
+    same system message starts almost immediately. If a warm-up is already running nothing new
+    starts (returns None): extra ones would only queue up in front of the real question.
+    Errors are ignored: it is only a head start.
     """
+    if not _warming.acquire(blocking=False):
+        return None
+
     def run() -> None:
         try:
             urllib.request.urlopen(_chat_request(messages, url, model, stream=False, num_predict=1),
                                    timeout=600).read()
         except OSError:
             pass
+        finally:
+            _warming.release()
 
     thread = threading.Thread(target=run, daemon=True)  # daemon: never keeps the app from closing
     thread.start()
     return thread
-
 
 def stream_answer(messages: list[dict], url: str = OLLAMA_URL, model: str = MODEL,
                   timeout: float = 300) -> Iterator[str]:

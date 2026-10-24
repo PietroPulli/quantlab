@@ -52,7 +52,6 @@ def explain_panel(facts: dict[str, str], key: str) -> None:
         return
 
     st.session_state.last_facts = facts  # the Assistente tab can talk about it too
-    _warm_up(assistant.build_messages(facts, [], "")[:1])
     if st.session_state.get("chat_key") != key:
         st.session_state.chat_key, st.session_state.chat = key, []
     chat = st.session_state.chat
@@ -66,6 +65,7 @@ def explain_panel(facts: dict[str, str], key: str) -> None:
     question = asked or question
     if not question:
         st.caption(f"Modello {assistant.MODEL} sul tuo PC: usa solo i numeri qui sopra, non dà consigli.")
+        _warm_up(assistant.build_messages(facts, [], "")[:1])
         return
 
     st.chat_message("user").markdown(question)
@@ -107,9 +107,6 @@ def render() -> None:
     ideas = {name: idea.explanation for name, idea in IDEAS.items()}
     market = _market() if use_market else None
     facts = facts if use_result else None
-    # The model starts loading now, while you read and type: the first answer comes much sooner.
-    _warm_up(assistant.build_chat([], "", ideas, facts, market)[:1])
-
     for message in chat:
         st.chat_message(message["role"]).markdown(message["content"])
 
@@ -123,6 +120,8 @@ def render() -> None:
         st.caption(f"Modello {assistant.MODEL} sul tuo PC. Non ha internet: conosce solo i prezzi della "
                    "watchlist. Non dà consigli di investimento e può sbagliare: verifica le cose importanti.")
     if not question:
+        # The model starts loading now, while you read and type: the first answer comes much sooner.
+        _warm_up(assistant.build_chat([], "", ideas, facts, market)[:1])
         return
 
     st.chat_message("user").markdown(question)

@@ -103,3 +103,31 @@ def test_warm_up_asks_for_one_word_and_never_raises(monkeypatch):
     assistant.warm_up([{"role": "system", "content": "regole"}]).join(timeout=5)
     assert sent[0]["options"]["num_predict"] == 1
     assert sent[0]["think"] is False and sent[0]["messages"][0]["content"] == "regole"
+
+
+def test_only_the_recent_conversation_is_sent():
+    history = [{"role": "user", "content": str(i)} for i in range(30)]
+    messages = assistant.build_chat(history, "nuova", IDEAS)
+    assert len(messages) == 1 + assistant.MAX_HISTORY + 1  # rules + recent messages + the question
+    assert messages[1]["content"] == str(30 - assistant.MAX_HISTORY)
+
+
+def test_a_second_warm_up_does_not_start_while_one_is_running(monkeypatch):
+    import threading
+    release = threading.Event()
+    calls = []
+
+    def urlopen(request, timeout):
+        calls.append(1)
+        release.wait(5)  # the first warm-up is still busy
+        raise OSError("done")
+
+    monkeypatch.setattr(assistant.urllib.request, "urlopen", urlopen)
+    first = assistant.warm_up([{"role": "system", "content": "regole"}])
+    assert assistant.warm_up([{"role": "system", "content": "regole"}]) is None
+    release.set()
+    first.join(timeout=5)
+    assert len(calls) == 1
+    again = assistant.warm_up([{"role": "system", "content": "regole"}])
+    assert again is not None  # free again
+    again.join(timeout=5)  # finish while urlopen is still the fake one
