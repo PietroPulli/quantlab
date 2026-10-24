@@ -5,6 +5,7 @@ Run from the project root with:  streamlit run app/streamlit_app.py
 Two views on the same truth machine:
 - simple.py:   three plain choices, one plain answer (the default);
 - advanced.py: every parameter, custom rules and all the statistics.
+Plus the scanner, the demo account and the Assistente (a local AI to ask finance questions).
 This file only draws the frame. Every number comes from the quantlab library.
 """
 
@@ -20,6 +21,7 @@ sys.path.insert(0, str(APP_DIR))  # so the views can `import common`
 sys.path.insert(0, str(APP_DIR.parent / "src"))
 
 import advanced  # noqa: E402
+import assistant_view  # noqa: E402
 import paper_view  # noqa: E402
 import scanner_view  # noqa: E402
 import simple  # noqa: E402
@@ -34,6 +36,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 VIEWS = {"Semplice": simple.render, "Approfondita": advanced.render, "Scanner": scanner_view.render,
-         "Conto demo": paper_view.render}
+         "Conto demo": paper_view.render, "Assistente": assistant_view.render}
 view = st.radio("Vista", list(VIEWS), key="view", horizontal=True, label_visibility="collapsed")
 VIEWS[view]()

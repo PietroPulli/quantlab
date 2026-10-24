@@ -318,3 +318,27 @@ def test_demo_replay_runs_the_account_over_a_past_period(fake_prices):
     assert not at.exception
     assert any("Controllo backtest" in str(t.value.columns.tolist()) for t in at.table)
     assert any("Rendimento" in m.value for m in at.markdown)
+
+
+def _assistant_tab(monkeypatch, available: bool) -> AppTest:
+    import streamlit as st
+    import quantlab.assistant
+
+    st.cache_data.clear()  # the app remembers for 30 s whether Ollama answers
+    monkeypatch.setattr(quantlab.assistant, "is_available", lambda *a, **k: available)
+    monkeypatch.setattr(quantlab.assistant, "stream_answer", lambda messages, **k: iter(["Lo Sharpe ", "è..."]))
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    return at.radio(key="view").set_value("Assistente").run()
+
+
+def test_assistant_tab_explains_how_to_install_when_ollama_is_off(fake_prices, monkeypatch):
+    at = _assistant_tab(monkeypatch, available=False)
+    assert not at.exception
+    assert any("ollama pull" in box.value for box in at.info)
+
+
+def test_assistant_tab_answers_an_example_question(fake_prices, monkeypatch):
+    at = _assistant_tab(monkeypatch, available=True)
+    at.button(key="assistant_example_0").click().run()
+    assert not at.exception
+    assert any("Lo Sharpe è..." in m.value for m in at.markdown)

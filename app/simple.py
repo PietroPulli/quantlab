@@ -6,6 +6,7 @@ from datetime import date
 import streamlit as st
 
 import paper_view
+from assistant_view import explain_panel
 from common import app_factor, get_ohlcv, quotes, show_news, verdict_tone
 from panels import (
     RANGES,
@@ -221,3 +222,36 @@ def _show_result(asset, ticker, idea, amount, report, a, trades, signal, last_pr
             "rendono il 2% annuo.\n"
             "- «Differenza compatibile con la fortuna»: rimescolando 1.000 volte la storia (bootstrap), "
             "il vantaggio non è stabilmente sopra zero.")
+
+    explain_panel(_facts(asset, ticker, idea, amount, report, a, final, final_bh, tone),
+                  key=f"{ticker}|{idea}|{amount}|{report.split:%Y%m%d}")
+
+
+def _facts(asset, ticker, idea, amount, report, a, final, final_bh, tone) -> dict[str, str]:
+    """The numbers on screen, as plain sentences for the local AI (it rewords them, never computes)."""
+    m, stats = a["metrics"], a["stats"]
+    low, high = report.sharpe_diff_ci
+    facts = {
+        "Titolo": f"{short(asset)} ({ticker})",
+        "Idea provata": f"{idea}: {IDEAS[idea].explanation}",
+        "Periodo giudicato": f"{report.split:%d/%m/%Y} - oggi ({num(a['years'], 1)} anni), mai usato per "
+                             "scegliere i parametri; costi inclusi (0,10% commissione + 0,05% slippage)",
+        "Capitale": f"{euro(amount)} diventati {euro(final)} con l'idea, {euro(final_bh)} con il compra e tieni",
+        "Rendimento annuo": f"idea {pct(m.loc['annual_return', 'strategy'], True)}, "
+                            f"compra e tieni {pct(m.loc['annual_return', 'buy_and_hold'], True)}",
+        "Calo massimo dal picco": f"idea {pct(m.loc['max_drawdown', 'strategy'])}, "
+                                  f"compra e tieni {pct(m.loc['max_drawdown', 'buy_and_hold'])}",
+        "Sharpe (rendimento per unità di rischio)": f"idea {num(m.loc['sharpe', 'strategy'])}, "
+                                                    f"compra e tieni {num(m.loc['sharpe', 'buy_and_hold'])}",
+        "Tempo investito": f"{pct(a['exposure'], decimals=0)} dei giorni, il resto in liquidità al 2% annuo",
+        "Operazioni": f"{len(a['trades'])} in totale, {stats['trades']} chiuse, di cui "
+                      f"{round(stats['win_rate'] * stats['trades'])} in guadagno "
+                      f"({pct(stats['win_rate'], decimals=0)})" if stats["trades"] else "nessuna chiusa",
+        "Test della fortuna (bootstrap)": f"differenza di Sharpe tra {num(low, 2, True)} e {num(high, 2, True)} "
+                                          f"(intervallo 95%); l'idea vince nel {pct(report.share_beating, decimals=0)} "
+                                          "dei rimescolamenti",
+        "Verdetto": SENTENCES[tone],
+    }
+    if report.warnings:
+        facts["Avvertenze"] = " ".join(report.warnings)
+    return facts
