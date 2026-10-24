@@ -15,10 +15,11 @@ onesto** che dice se regge o no.
 cosa vorrebbero verificare loro.
 
 ## Dopo l'MVP (da decidere insieme agli altri)
-- Interfaccia semplice (Streamlit) per chi non programma
-- Portafogli multi-asset e ribilanciamento
-- Modulo derivati: Black-Scholes, greche, Monte Carlo
-- Report pubblici: "La strategia X regge davvero?" → contenuti per farsi conoscere
+- [x] Interfaccia semplice (Streamlit) per chi non programma
+- [x] Portafogli multi-asset e ribilanciamento
+- [x] Modulo derivati: Black-Scholes, greche, Monte Carlo (`derivatives.py`, scheda Opzioni)
+- [x] Report pubblici: primo report "Tre strategie famose battono il compra e tieni?" (24/10/2026)
+- [x] Assistente AI locale (Ollama, senza chiavi), anche dal telefono via Tailscale
 
 ## Regola del tempo
 Se una fase sfora di più di una settimana, si taglia lo scope, non si allunga.

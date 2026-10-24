@@ -352,3 +352,14 @@ def test_assistant_chat_is_still_there_when_the_app_reopens(fake_prices, monkeyp
     reopened = AppTest.from_file(APP, default_timeout=60).run()  # a new session: nothing in memory
     reopened = reopened.radio(key="view").set_value("Assistente").run()
     assert any("Lo Sharpe è..." in m.value for m in reopened.markdown)
+
+
+def test_options_tab_prices_a_call_and_shows_the_greeks(fake_prices):
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at = at.radio(key="view").set_value("Opzioni").run()
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "Prezzo Black-Scholes" in text and "Monte Carlo" in text
+    assert "Delta" in at.table[0].value.index
+    at = at.radio(key="opt_kind").set_value("put").run()
+    assert not at.exception
