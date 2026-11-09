@@ -132,3 +132,5 @@ date,ticker,idea,position,value,bench_value
 2026-11-06,FTSEMIB.MI,Segui la tendenza,1,1885.4689978172512,1966.9377189184934
 2026-11-06,GC=F,Compra ciò che è salito nell'ultimo anno,1,1957.6538412564314,1957.6538412564314
 2026-11-06,BTC-USD,Esci quando il mercato ha paura,0,1765.2776288693037,1763.289716651531
+2026-11-07,BTC-USD,Esci quando il mercato ha paura,0,1765.3734044398632,1763.3048114306905
+2026-11-08,BTC-USD,Esci quando il mercato ha paura,0,1765.4691852067497,1736.2333252646192
