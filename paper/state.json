@@ -8,16 +8,16 @@
       "shares": 2.5773394886022363,
       "bench_cash": 0.0,
       "bench_shares": 2.5773394886022363,
-      "last_date": "2026-11-12"
+      "last_date": "2026-11-13"
     },
     {
       "ticker": "QQQ",
       "idea": "Compra quando sfonda verso l'alto",
-      "cash": 1822.0235675430895,
+      "cash": 1822.1667511594396,
       "shares": 0.0,
       "bench_cash": 0.0,
       "bench_shares": 2.640835715106104,
-      "last_date": "2026-11-12"
+      "last_date": "2026-11-13"
     },
     {
       "ticker": "FTSEMIB.MI",
@@ -26,16 +26,16 @@
       "shares": 0.0376694503389857,
       "bench_cash": 0.0,
       "bench_shares": 0.03929709945294974,
-      "last_date": "2026-11-12"
+      "last_date": "2026-11-13"
     },
     {
       "ticker": "GC=F",
       "idea": "Compra ci\u00f2 che \u00e8 salito nell'ultimo anno",
-      "cash": 1863.7668748148742,
+      "cash": 1863.9133388266043,
       "shares": 0.0,
       "bench_cash": 0.0,
       "bench_shares": 0.4804176515183729,
-      "last_date": "2026-11-12"
+      "last_date": "2026-11-13"
     },
     {
       "ticker": "BTC-USD",
@@ -44,7 +44,7 @@
       "shares": 0.023435826076573078,
       "bench_cash": 0.0,
       "bench_shares": 0.023278695571241282,
-      "last_date": "2026-11-12"
+      "last_date": "2026-11-13"
     }
   ]
 }
