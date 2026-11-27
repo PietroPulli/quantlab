@@ -22,11 +22,11 @@
     {
       "ticker": "FTSEMIB.MI",
       "idea": "Segui la tendenza",
-      "cash": 1832.3328433710121,
+      "cash": 1832.4768371412051,
       "shares": 0.0,
       "bench_cash": 0.0,
       "bench_shares": 0.03929709945294974,
-      "last_date": "2026-11-25"
+      "last_date": "2026-11-26"
     },
     {
       "ticker": "GC=F",
@@ -40,11 +40,11 @@
     {
       "ticker": "BTC-USD",
       "idea": "Esci quando il mercato ha paura",
-      "cash": 1488.4842790876871,
+      "cash": 1488.565037167191,
       "shares": 0.0,
       "bench_cash": 0.0,
       "bench_shares": 0.023278695571241282,
-      "last_date": "2026-11-25"
+      "last_date": "2026-11-26"
     }
   ]
 }
