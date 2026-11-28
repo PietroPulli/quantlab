@@ -4,47 +4,47 @@
     {
       "ticker": "SPY",
       "idea": "Segui la tendenza",
-      "cash": 1842.8516148701667,
+      "cash": 1842.9964352574077,
       "shares": 0.0,
       "bench_cash": 0.0,
       "bench_shares": 2.5773394886022363,
-      "last_date": "2026-11-25"
+      "last_date": "2026-11-27"
     },
     {
       "ticker": "QQQ",
       "idea": "Compra quando sfonda verso l'alto",
-      "cash": 1823.3126252392676,
+      "cash": 1823.455910156142,
       "shares": 0.0,
       "bench_cash": 0.0,
       "bench_shares": 2.640835715106104,
-      "last_date": "2026-11-25"
+      "last_date": "2026-11-27"
     },
     {
       "ticker": "FTSEMIB.MI",
       "idea": "Segui la tendenza",
-      "cash": 1832.4768371412051,
+      "cash": 1832.62084222714,
       "shares": 0.0,
       "bench_cash": 0.0,
       "bench_shares": 0.03929709945294974,
-      "last_date": "2026-11-26"
+      "last_date": "2026-11-27"
     },
     {
       "ticker": "GC=F",
       "idea": "Compra ci\u00f2 che \u00e8 salito nell'ultimo anno",
-      "cash": 1691.2493344275258,
+      "cash": 1691.3822411583533,
       "shares": 0.0,
       "bench_cash": 0.0,
       "bench_shares": 0.4804176515183729,
-      "last_date": "2026-11-25"
+      "last_date": "2026-11-27"
     },
     {
       "ticker": "BTC-USD",
       "idea": "Esci quando il mercato ha paura",
-      "cash": 1488.565037167191,
-      "shares": 0.0,
+      "cash": 0.0,
+      "shares": 0.024828844704836,
       "bench_cash": 0.0,
       "bench_shares": 0.023278695571241282,
-      "last_date": "2026-11-26"
+      "last_date": "2026-11-27"
     }
   ]
 }
